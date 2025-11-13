@@ -1,9 +1,39 @@
+import { z } from "zod";
+
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 if (!OPENROUTER_API_KEY) {
   console.error("⚠️  WARNING: OPENROUTER_API_KEY is not set. AI features will not work.");
 }
+
+const extractedDataSchema = z.object({
+  patientName: z.string().nullable().optional(),
+  patientAge: z.number().nullable().optional(),
+  patientGender: z.string().nullable().optional(),
+  patientWeight: z.number().nullable().optional(),
+  patientHeight: z.number().nullable().optional(),
+  diagnosis: z.string().nullable().optional(),
+  medicalHistory: z.string().nullable().optional(),
+  allergies: z.string().nullable().optional(),
+  labResults: z.record(z.any()).nullable().optional(),
+  medications: z.array(z.object({
+    drugName: z.string(),
+    dose: z.string().optional(),
+    frequency: z.string().optional(),
+    route: z.string().optional(),
+  })).nullable().optional(),
+});
+
+const evidenceItemSchema = z.object({
+  title: z.string(),
+  source: z.string(),
+  url: z.string().nullable().optional(),
+  summary: z.string(),
+  relevanceScore: z.number().nullable().optional(),
+  publicationYear: z.number().nullable().optional(),
+  citationCount: z.number().nullable().optional(),
+});
 
 const MODELS = {
   DEEPSEEK: "deepseek/deepseek-chat",
@@ -183,28 +213,48 @@ ${idx + 1}. ${med.drugName}
    - Liều hiện tại: ${med.prescribedDose} ${med.prescribedRoute} ${med.prescribedFrequency}
 `).join("\n") || "Chưa có thuốc"}
 
-Hãy cung cấp phân tích chi tiết bao gồm:
+QUAN TRỌNG: Hãy cung cấp phân tích chi tiết bao gồm:
 1. Đánh giá chức năng thận và tác động đến các thuốc
 2. Kiểm tra tương tác thuốc-thuốc
 3. Kiểm tra tương tác thuốc-bệnh
 4. Khuyến nghị điều chỉnh liều (nếu cần)
 5. Các lưu ý theo dõi và cảnh báo
 
-Trả về kết quả dưới dạng JSON với cấu trúc:
+TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
 {
-  "renalAssessment": "...",
-  "drugDrugInteractions": [...],
-  "drugDiseaseInteractions": [...],
-  "doseAdjustments": [...],
-  "monitoring": [...],
-  "warnings": [...]
+  "renalAssessment": "đánh giá chức năng thận",
+  "drugDrugInteractions": ["tương tác 1", "tương tác 2"],
+  "drugDiseaseInteractions": ["tương tác bệnh 1"],
+  "doseAdjustments": ["điều chỉnh 1", "điều chỉnh 2"],
+  "monitoring": ["theo dõi 1", "theo dõi 2"],
+  "warnings": ["cảnh báo 1"]
 }`;
 
-  const initialAnalysis = await callDeepSeek(systemPrompt, userPrompt);
+  const rawAnalysis = await callDeepSeek(systemPrompt, userPrompt);
+  
+  let initialAnalysis: any;
+  try {
+    const cleanedAnalysis = rawAnalysis.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    
+    initialAnalysis = JSON.parse(cleanedAnalysis);
+  } catch (error: any) {
+    console.error("Failed to parse analysis JSON:", error, "\nRaw:", rawAnalysis);
+    initialAnalysis = { 
+      error: "Lỗi phân tích JSON",
+      rawResponse: rawAnalysis 
+    };
+  }
 
   const verificationQuery = `Kiểm tra khuyến nghị điều chỉnh liều thuốc cho bệnh nhân ${caseData.patientAge} tuổi với chẩn đoán ${caseData.diagnosis} và eGFR ${caseData.egfr || "không rõ"} ml/min/1.73m². Thuốc đang dùng: ${caseData.medications?.map((m: any) => m.drugName).join(", ")}`;
 
-  const verified = await verifyWithPipeline(initialAnalysis, verificationQuery);
+  const verified = await verifyWithPipeline(
+    typeof initialAnalysis === 'string' ? initialAnalysis : JSON.stringify(initialAnalysis), 
+    verificationQuery
+  );
 
   return {
     initialAnalysis,
@@ -214,19 +264,69 @@ Trả về kết quả dưới dạng JSON với cấu trúc:
   };
 }
 
-export async function searchMedicalEvidence(query: string): Promise<string> {
-  const systemPrompt = `Bạn là trợ lý nghiên cứu y khoa. Hãy tìm kiếm guidelines, nghiên cứu lâm sàng, và bằng chứng y khoa liên quan đến câu hỏi.`;
+export async function searchMedicalEvidence(query: string): Promise<any[]> {
+  const systemPrompt = `Bạn là trợ lý nghiên cứu y khoa. QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích.`;
 
   const userPrompt = `Tìm kiếm bằng chứng y khoa cho: ${query}
 
-Hãy cung cấp:
-1. Các guidelines quốc tế liên quan (AHA, ESC, KDIGO, IDSA, v.v.)
-2. Nghiên cứu lâm sàng quan trọng
-3. Meta-analysis và systematic reviews
-4. Khuyến nghị cụ thể
-5. Nguồn tham khảo`;
+TRẢ VỀ CHỈ JSON array với các bằng chứng (không có markdown, không có text khác):
+[
+  {
+    "title": "Tên guideline/nghiên cứu",
+    "source": "Tên tổ chức/journal (AHA, ESC, KDIGO, PubMed, etc.)",
+    "url": "URL nguồn (nếu có) hoặc null",
+    "summary": "Tóm tắt findings và khuyến nghị",
+    "relevanceScore": 0.9 (hoặc null),
+    "publicationYear": 2024 (hoặc null),
+    "citationCount": 100 (hoặc null)
+  }
+]
 
-  return callPerplexity(systemPrompt, userPrompt);
+Tìm kiếm ít nhất 3-5 bằng chứng quan trọng nhất.`;
+
+  const rawResult = await callPerplexity(systemPrompt, userPrompt);
+  
+  try {
+    const cleanedResult = rawResult.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedResult);
+    const evidenceArray = Array.isArray(parsed) ? parsed : [parsed];
+    
+    const validated = evidenceArray.map((item: any) => {
+      const result = evidenceItemSchema.safeParse(item);
+      if (result.success) {
+        return result.data;
+      } else {
+        console.error("Evidence item validation failed:", result.error);
+        return {
+          title: item.title || "Unknown",
+          source: item.source || "Perplexity",
+          url: item.url || null,
+          summary: item.summary || JSON.stringify(item),
+          relevanceScore: null,
+          publicationYear: null,
+          citationCount: null,
+        };
+      }
+    });
+    
+    return validated;
+  } catch (error: any) {
+    console.error("Failed to parse evidence JSON:", error, "\nRaw:", rawResult);
+    return [{
+      title: "Evidence Search Results",
+      source: "Perplexity",
+      url: null,
+      summary: rawResult,
+      relevanceScore: null,
+      publicationYear: null,
+      citationCount: null,
+    }];
+  }
 }
 
 export async function generateConsultationForm(
@@ -246,20 +346,49 @@ THÔNG TIN BỆNH NHÂN:
 KẾT QUẢ PHÂN TÍCH:
 ${JSON.stringify(analysisResult, null, 2)}
 
-Tạo phiếu tư vấn với cấu trúc JSON:
+QUAN TRỌNG - TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
 {
-  "consultationDate": "...",
-  "pharmacistName": "...",
-  "patientInfo": {...},
-  "clinicalAssessment": "...",
-  "recommendations": [...],
-  "monitoring": [...],
-  "patientEducation": [...],
-  "followUp": "..."
+  "consultationDate": "YYYY-MM-DD",
+  "pharmacistName": "Tên dược sĩ",
+  "patientInfo": {
+    "name": "...",
+    "age": 0,
+    "gender": "...",
+    "diagnosis": "..."
+  },
+  "clinicalAssessment": "Đánh giá lâm sàng chi tiết",
+  "recommendations": ["Khuyến nghị 1", "Khuyến nghị 2"],
+  "monitoring": ["Theo dõi 1", "Theo dõi 2"],
+  "patientEducation": ["Hướng dẫn 1", "Hướng dẫn 2"],
+  "followUp": "Kế hoạch tái khám"
 }`;
 
-  const result = await callDeepSeek(systemPrompt, userPrompt);
-  return result;
+  const rawResult = await callDeepSeek(systemPrompt, userPrompt);
+  
+  try {
+    const cleanedResult = rawResult.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedResult);
+    return parsed;
+  } catch (error: any) {
+    console.error("Failed to parse consultation form JSON:", error, "\nRaw:", rawResult);
+    return {
+      error: "Lỗi phân tích JSON",
+      rawResponse: rawResult,
+      consultationDate: new Date().toISOString().split('T')[0],
+      pharmacistName: "Unknown",
+      patientInfo: caseData,
+      clinicalAssessment: rawResult.substring(0, 500),
+      recommendations: [],
+      monitoring: [],
+      patientEducation: [],
+      followUp: ""
+    };
+  }
 }
 
 export async function chatWithAI(
@@ -297,34 +426,55 @@ export async function extractDataFromDocument(
   fileContent: string,
   fileType: "pdf" | "docx"
 ): Promise<any> {
-  const systemPrompt = `Bạn là chuyên gia trích xuất dữ liệu y tế. Hãy phân tích nội dung tài liệu và trích xuất thông tin bệnh nhân, chẩn đoán, xét nghiệm, và danh sách thuốc.`;
+  const systemPrompt = `Bạn là chuyên gia trích xuất dữ liệu y tế. QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích hay markdown. Response phải bắt đầu bằng { và kết thúc bằng }.`;
 
-  const userPrompt = `Hãy trích xuất thông tin từ tài liệu ${fileType.toUpperCase()} sau:
+  const userPrompt = `Trích xuất thông tin từ tài liệu ${fileType.toUpperCase()} sau và TRẢ VỀ CHỈ JSON (không có markdown, không có text khác):
 
 ${fileContent}
 
-Trả về JSON với cấu trúc:
+JSON format (nếu thiếu thông tin thì để null):
 {
-  "patientName": "...",
-  "patientAge": 0,
-  "patientGender": "...",
-  "patientWeight": 0,
-  "diagnosis": "...",
-  "medicalHistory": "...",
-  "allergies": "...",
-  "labResults": {...},
+  "patientName": "string hoặc null",
+  "patientAge": number hoặc null,
+  "patientGender": "string hoặc null",
+  "patientWeight": number hoặc null,
+  "patientHeight": number hoặc null,
+  "diagnosis": "string hoặc null",
+  "medicalHistory": "string hoặc null",
+  "allergies": "string hoặc null",
+  "labResults": {} hoặc null,
   "medications": [
     {
-      "drugName": "...",
-      "dose": "...",
-      "frequency": "...",
-      "route": "..."
+      "drugName": "tên thuốc",
+      "dose": "liều lượng",
+      "frequency": "tần suất",
+      "route": "đường dùng"
     }
-  ]
+  ] hoặc null
 }
 
-Nếu thông tin nào không có trong tài liệu, hãy để null.`;
+CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
 
-  const result = await callDeepSeek(systemPrompt, userPrompt, 0.3);
-  return result;
+  const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.3);
+  
+  try {
+    const cleanedResult = rawResult.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedResult);
+    const validated = extractedDataSchema.safeParse(parsed);
+    
+    if (!validated.success) {
+      console.error("Validation failed:", validated.error);
+      throw new Error("Dữ liệu trích xuất không đúng định dạng");
+    }
+    
+    return validated.data;
+  } catch (error: any) {
+    console.error("Failed to parse AI response:", error, "\nRaw:", rawResult);
+    throw new Error("Lỗi phân tích dữ liệu từ AI: " + error.message);
+  }
 }

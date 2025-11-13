@@ -143,6 +143,40 @@ export const consultationReports = pgTable("consultation_reports", {
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });
 
+export const analysisResultSchema = z.object({
+  initialAnalysis: z.object({
+    renalAssessment: z.string(),
+    drugDrugInteractions: z.array(z.string()),
+    drugDiseaseInteractions: z.array(z.string()),
+    doseAdjustments: z.array(z.string()),
+    monitoring: z.array(z.string()),
+    warnings: z.array(z.string()),
+  }),
+  verified: z.boolean(),
+  evidenceFindings: z.array(z.object({
+    title: z.string(),
+    source: z.string(),
+    summary: z.string(),
+  })),
+  finalAnalysis: z.string(),
+});
+
+export const reportContentSchema = z.object({
+  consultationDate: z.string().optional(),
+  pharmacistName: z.string().min(1, "Tên dược sĩ không được để trống"),
+  patientInfo: z.object({
+    name: z.string(),
+    age: z.number(),
+    gender: z.string(),
+    diagnosis: z.string(),
+  }).optional(),
+  clinicalAssessment: z.string().min(1, "Đánh giá lâm sàng không được để trống"),
+  recommendations: z.array(z.string()).min(1, "Phải có ít nhất một khuyến nghị"),
+  monitoring: z.array(z.string()).min(1, "Phải có ít nhất một mục theo dõi"),
+  patientEducation: z.array(z.string()).min(1, "Phải có ít nhất một hướng dẫn"),
+  followUp: z.string().min(1, "Kế hoạch tái khám không được để trống"),
+});
+
 export const insertConsultationReportSchema = createInsertSchema(consultationReports).omit({
   id: true,
   createdAt: true,

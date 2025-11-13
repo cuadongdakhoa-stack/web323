@@ -11,6 +11,8 @@ import {
   insertEvidenceSchema,
   insertChatMessageSchema,
   insertConsultationReportSchema,
+  reportContentSchema,
+  analysisResultSchema,
   medications,
   analyses,
   evidence
@@ -24,6 +26,9 @@ import {
   extractDataFromDocument,
   verifyWithPipeline
 } from "./openrouter";
+import multer from "multer";
+import * as pdfParse from "pdf-parse";
+import mammoth from "mammoth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/auth/login", (req, res, next) => {
@@ -57,6 +62,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ user: req.user });
     } else {
       res.status(401).json({ message: "Chưa đăng nhập" });
+    }
+  });
+
+  const upload = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Chỉ chấp nhận file PDF hoặc DOCX'));
+      }
+    }
+  });
+
+  app.post("/api/cases/extract", requireAuth, upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "Không có file được tải lên" });
+      }
+
+      let textContent = "";
+      let fileType: "pdf" | "docx" = "pdf";
+
+      if (req.file.mimetype === 'application/pdf') {
+        const pdfData = await pdfParse(req.file.buffer);
+        textContent = pdfData.text;
+        fileType = "pdf";
+      } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
+        textContent = result.value;
+        fileType = "docx";
+      }
+
+      if (!textContent || textContent.trim().length === 0) {
+        return res.status(400).json({ message: "Không thể trích xuất nội dung từ file" });
+      }
+
+      const extractedData = await extractDataFromDocument(textContent, fileType);
+      
+      let parsedData;
+      try {
+        parsedData = typeof extractedData === 'string' ? JSON.parse(extractedData) : extractedData;
+      } catch (parseError) {
+        return res.status(500).json({ message: "Lỗi phân tích dữ liệu từ AI" });
+      }
+
+      res.json(parsedData);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Lỗi xử lý file" });
     }
   });
 
@@ -100,6 +156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validatedData = insertCaseSchema.parse({
         ...req.body,
         userId: req.user!.id,
+        admissionDate: new Date(req.body.admissionDate),
       });
       
       const newCase = await storage.createCase(validatedData);
@@ -245,6 +302,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/cases/:id/analyze", requireAuth, async (req, res) => {
+    try {
+      const caseData = await storage.getCase(req.params.id);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+      }
+      
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền phân tích ca bệnh này" });
+      }
+
+      const medications = await storage.getMedicationsByCase(req.params.id);
+
+      const analysisResult = await analyzePatientCase({
+        ...caseData,
+        medications,
+      });
+
+      const analysis = await storage.createAnalysis({
+        caseId: req.params.id,
+        analysisType: "patient_case",
+        result: analysisResult,
+        model: "deepseek-chat",
+        status: "completed",
+      });
+
+      res.json(analysis);
+    } catch (error: any) {
+      console.error("Analysis error:", error);
+      
+      try {
+        await storage.createAnalysis({
+          caseId: req.params.id,
+          analysisType: "patient_case",
+          result: {},
+          model: "deepseek-chat",
+          status: "failed",
+          error: error.message,
+        });
+      } catch (dbError) {
+        console.error("Failed to save error analysis:", dbError);
+      }
+      
+      res.status(500).json({ message: error.message || "Lỗi khi phân tích ca bệnh" });
+    }
+  });
+
   app.post("/api/analyses", requireAuth, async (req, res) => {
     try {
       const validatedData = insertAnalysisSchema.parse(req.body);
@@ -296,6 +401,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(evidence);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/cases/:id/evidence/search", requireAuth, async (req, res) => {
+    try {
+      const caseData = await storage.getCase(req.params.id);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+      }
+      
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền tìm kiếm bằng chứng cho ca bệnh này" });
+      }
+
+      const { query } = req.body;
+      if (!query || typeof query !== 'string') {
+        return res.status(400).json({ message: "Query is required" });
+      }
+
+      const evidenceItems = await searchMedicalEvidence(query);
+
+      const savedEvidence = await Promise.all(
+        evidenceItems.map(item =>
+          storage.createEvidence({
+            caseId: req.params.id,
+            query,
+            title: item.title,
+            source: item.source,
+            url: item.url || null,
+            summary: item.summary,
+            relevanceScore: item.relevanceScore || null,
+            citationCount: item.citationCount || null,
+            publicationYear: item.publicationYear || null,
+            verificationStatus: "pending",
+          })
+        )
+      );
+
+      res.json(savedEvidence);
+    } catch (error: any) {
+      console.error("Evidence search error:", error);
+      res.status(500).json({ message: error.message || "Lỗi khi tìm kiếm bằng chứng" });
     }
   });
 
@@ -371,6 +519,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post("/api/cases/:id/reports/generate", requireAuth, async (req, res) => {
+    try {
+      const caseData = await storage.getCase(req.params.id);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+      }
+
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền tạo phiếu tư vấn cho ca bệnh này" });
+      }
+
+      const analyses = await storage.getAnalysesByCase(req.params.id);
+      if (!analyses || analyses.length === 0) {
+        return res.status(400).json({ 
+          message: "Chưa có phân tích AI nào cho ca bệnh này. Vui lòng phân tích trước khi tạo phiếu tư vấn." 
+        });
+      }
+
+      const latestAnalysis = analyses[analyses.length - 1];
+      if (!latestAnalysis.result || latestAnalysis.status !== "completed") {
+        return res.status(400).json({ 
+          message: "Phân tích gần nhất chưa hoàn thành. Vui lòng chạy lại phân tích." 
+        });
+      }
+
+      try {
+        analysisResultSchema.parse(latestAnalysis.result);
+      } catch (validationError: any) {
+        return res.status(400).json({
+          message: "Kết quả phân tích không hợp lệ. Vui lòng chạy lại phân tích.",
+          details: validationError.errors
+        });
+      }
+
+      const reportContent = await generateConsultationForm(caseData, latestAnalysis.result);
+
+      reportContentSchema.parse(reportContent);
+
+      const validatedData = insertConsultationReportSchema.parse({
+        caseId: req.params.id,
+        reportContent,
+        generatedBy: user.id,
+        approved: false,
+      });
+
+      const report = await storage.createConsultationReport(validatedData);
+
+      res.json(report);
+    } catch (error: any) {
+      console.error("Report generation error:", error);
+      
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: "Dữ liệu phiếu tư vấn không hợp lệ",
+          details: error.errors 
+        });
+      }
+      
+      res.status(500).json({ message: error.message || "Lỗi khi tạo phiếu tư vấn" });
+    }
+  });
+
   app.post("/api/consultation-reports", requireAuth, async (req, res) => {
     try {
       const validatedData = insertConsultationReportSchema.parse({
@@ -387,9 +598,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch("/api/consultation-reports/:id", requireAuth, async (req, res) => {
     try {
       const validatedData = insertConsultationReportSchema.partial().parse(req.body);
+      
+      if (validatedData.reportContent) {
+        reportContentSchema.parse(validatedData.reportContent);
+      }
+      
       const report = await storage.updateConsultationReport(req.params.id, validatedData);
       res.json(report);
     } catch (error: any) {
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: "Dữ liệu không hợp lệ",
+          details: error.errors 
+        });
+      }
       res.status(400).json({ message: error.message });
     }
   });
