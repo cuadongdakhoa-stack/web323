@@ -27,7 +27,9 @@ export default function Login() {
         title: "Đăng nhập thành công",
         description: "Chào mừng đến với Cửa Đông Care+ Pharma",
       });
-      setLocation("/");
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 800);
     },
     onError: (error: any) => {
       toast({
