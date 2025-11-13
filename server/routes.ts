@@ -642,7 +642,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const reportContent = await generateConsultationForm(caseData, latestAnalysis.result);
 
-      reportContentSchema.parse(reportContent);
+      try {
+        reportContentSchema.parse(reportContent);
+      } catch (validationError: any) {
+        console.error("Report content validation failed:", validationError);
+        return res.status(400).json({
+          message: "Nội dung phiếu tư vấn không hợp lệ",
+          details: validationError.errors
+        });
+      }
 
       const validatedData = insertConsultationReportSchema.parse({
         caseId: req.params.id,

@@ -516,7 +516,7 @@ export async function generateConsultationForm(
   caseData: any,
   analysisResult: any
 ): Promise<any> {
-  const systemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Hãy tạo phiếu tư vấn sử dụng thuốc chuẩn y khoa cho bệnh viện.`;
+  const systemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Hãy tạo phiếu tư vấn sử dụng thuốc chuẩn y khoa cho bệnh viện. QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích hay markdown.`;
 
   const userPrompt = `Dựa trên thông tin ca bệnh và kết quả phân tích, hãy tạo phiếu tư vấn sử dụng thuốc:
 
@@ -529,48 +529,79 @@ THÔNG TIN BỆNH NHÂN:
 KẾT QUẢ PHÂN TÍCH:
 ${JSON.stringify(analysisResult, null, 2)}
 
-QUAN TRỌNG - TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
+TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
 {
-  "consultationDate": "YYYY-MM-DD",
-  "pharmacistName": "Tên dược sĩ",
+  "consultationDate": "${new Date().toISOString().split('T')[0]}",
+  "pharmacistName": "Dược sĩ lâm sàng",
   "patientInfo": {
-    "name": "...",
-    "age": 0,
-    "gender": "...",
-    "diagnosis": "..."
+    "name": "${caseData.patientName}",
+    "age": ${caseData.patientAge},
+    "gender": "${caseData.patientGender}",
+    "diagnosis": "${caseData.diagnosis}"
   },
-  "clinicalAssessment": "Đánh giá lâm sàng chi tiết",
-  "recommendations": ["Khuyến nghị 1", "Khuyến nghị 2"],
-  "monitoring": ["Theo dõi 1", "Theo dõi 2"],
-  "patientEducation": ["Hướng dẫn 1", "Hướng dẫn 2"],
-  "followUp": "Kế hoạch tái khám"
-}`;
+  "clinicalAssessment": "Đánh giá lâm sàng chi tiết dựa trên phân tích AI và thông tin bệnh nhân",
+  "recommendations": [
+    "Khuyến nghị 1 dựa trên phân tích",
+    "Khuyến nghị 2 dựa trên bằng chứng y khoa"
+  ],
+  "monitoring": [
+    "Theo dõi 1 (xét nghiệm, triệu chứng)",
+    "Theo dõi 2 (tác dụng phụ)"
+  ],
+  "patientEducation": [
+    "Hướng dẫn 1 về cách dùng thuốc",
+    "Hướng dẫn 2 về chế độ ăn uống"
+  ],
+  "followUp": "Kế hoạch tái khám sau ... ngày/tuần"
+}
 
-  const rawResult = await callDeepSeek(systemPrompt, userPrompt);
+LƯU Ý: 
+- Tất cả arrays phải có ít nhất 1 item
+- Tất cả strings không được để trống
+- CHỈ TRẢ VỀ JSON, không thêm gì khác`;
+
+  const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.5);
   
   try {
-    const cleanedResult = rawResult.trim()
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
-      .trim();
+    let jsonString = rawResult.trim();
     
-    const parsed = JSON.parse(cleanedResult);
-    return parsed;
-  } catch (error: any) {
-    console.error("Failed to parse consultation form JSON:", error, "\nRaw:", rawResult);
-    return {
-      error: "Lỗi phân tích JSON",
-      rawResponse: rawResult,
-      consultationDate: new Date().toISOString().split('T')[0],
-      pharmacistName: "Unknown",
-      patientInfo: caseData,
-      clinicalAssessment: rawResult.substring(0, 500),
-      recommendations: [],
-      monitoring: [],
-      patientEducation: [],
-      followUp: ""
+    const firstBrace = jsonString.indexOf('{');
+    const lastBrace = jsonString.lastIndexOf('}');
+    
+    if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+      throw new Error("No valid JSON object found in DeepSeek response");
+    }
+    
+    jsonString = jsonString.substring(firstBrace, lastBrace + 1);
+    
+    const parsed = JSON.parse(jsonString);
+    
+    const ensuredData = {
+      consultationDate: parsed.consultationDate || new Date().toISOString().split('T')[0],
+      pharmacistName: parsed.pharmacistName || "Dược sĩ lâm sàng",
+      patientInfo: parsed.patientInfo || {
+        name: caseData.patientName,
+        age: caseData.patientAge,
+        gender: caseData.patientGender,
+        diagnosis: caseData.diagnosis
+      },
+      clinicalAssessment: parsed.clinicalAssessment || "Đánh giá lâm sàng dựa trên phân tích AI",
+      recommendations: Array.isArray(parsed.recommendations) && parsed.recommendations.length > 0
+        ? parsed.recommendations
+        : ["Tuân thủ đơn thuốc theo chỉ định"],
+      monitoring: Array.isArray(parsed.monitoring) && parsed.monitoring.length > 0
+        ? parsed.monitoring
+        : ["Theo dõi triệu chứng lâm sàng"],
+      patientEducation: Array.isArray(parsed.patientEducation) && parsed.patientEducation.length > 0
+        ? parsed.patientEducation
+        : ["Dùng thuốc đúng liều, đúng giờ"],
+      followUp: parsed.followUp || "Tái khám theo lịch hẹn của bác sĩ"
     };
+    
+    return ensuredData;
+  } catch (error: any) {
+    console.error("Failed to parse consultation form JSON:", error, "\nRaw response:", rawResult);
+    throw new Error(`AI trả về dữ liệu không hợp lệ. Vui lòng thử lại. Chi tiết: ${error.message}`);
   }
 }
 

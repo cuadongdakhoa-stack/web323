@@ -135,7 +135,7 @@ export const analysisResultSchema = z.object({
     warnings: z.array(z.string()).optional(),
   }).optional(),
   verified: z.boolean().optional(),
-  evidenceFindings: z.array(z.any()).optional(),
+  evidenceFindings: z.union([z.string(), z.array(z.any())]).optional(),
   finalAnalysis: z.union([z.string(), z.object({}).passthrough()]).optional(),
 }).passthrough();
 
@@ -144,8 +144,8 @@ export const reportContentSchema = z.object({
   pharmacistName: z.string().min(1, "Tên dược sĩ không được để trống"),
   patientInfo: z.object({
     name: z.string(),
-    age: z.number(),
-    gender: z.string(),
+    age: z.number().nullable().optional(),
+    gender: z.string().nullable().optional(),
     diagnosis: z.string(),
   }).optional(),
   clinicalAssessment: z.string().min(1, "Đánh giá lâm sàng không được để trống"),
