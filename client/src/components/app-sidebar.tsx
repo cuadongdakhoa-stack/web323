@@ -21,7 +21,7 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
-import logoUrl from "@assets/Thiết kế chưa có tên (5)_1763057832387.png";
+import logoUrl from "@assets/Thiết kế chưa có tên (6)_1763057903176.png";
 
 const menuItems = [
   {
