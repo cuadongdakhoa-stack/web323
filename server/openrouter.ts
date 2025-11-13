@@ -184,11 +184,12 @@ function removeMarkdown(text: string): string {
   if (!text || typeof text !== 'string') return '';
   
   return text
-    .replace(/\*\*([^*]+)\*\*/g, '$1')  // **bold** → bold
-    .replace(/\*([^*]+)\*/g, '$1')      // *italic* → italic  
+    // Remove ALL asterisks (both ** and * in any position)
+    .replace(/\*+/g, '')                // Remove all * characters
     .replace(/#{1,6}\s+/g, '')          // # headings → remove
-    .replace(/^\s*[-*+]\s+/gm, '')      // - list bullets → remove
+    .replace(/^\s*[-+]\s+/gm, '')       // - or + list bullets → remove (but keep numbered lists)
     .replace(/`([^`]+)`/g, '$1')        // `code` → code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // [link text](url) → link text
     .trim();
 }
 
