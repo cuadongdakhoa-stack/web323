@@ -1,38 +1,211 @@
-import { type User, type InsertUser } from "@shared/schema";
-import { randomUUID } from "crypto";
-
-// modify the interface with any CRUD methods
-// you might need
+import { db } from "./db";
+import { 
+  users, type User, type InsertUser,
+  cases, type Case, type InsertCase,
+  medications, type Medication, type InsertMedication,
+  analyses, type Analysis, type InsertAnalysis,
+  evidence, type Evidence, type InsertEvidence,
+  chatMessages, type ChatMessage, type InsertChatMessage,
+  consultationReports, type ConsultationReport, type InsertConsultationReport
+} from "@shared/schema";
+import { eq, desc, and, or, sql, like } from "drizzle-orm";
+import bcrypt from "bcrypt";
 
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  getAllUsers(): Promise<User[]>;
+  
+  getCase(id: string): Promise<Case | undefined>;
+  getCasesByUser(userId: string): Promise<Case[]>;
+  getAllCases(): Promise<Case[]>;
+  createCase(caseData: InsertCase): Promise<Case>;
+  updateCase(id: string, caseData: Partial<InsertCase>): Promise<Case | undefined>;
+  deleteCase(id: string): Promise<void>;
+  
+  getMedicationsByCase(caseId: string): Promise<Medication[]>;
+  createMedication(medication: InsertMedication): Promise<Medication>;
+  updateMedication(id: string, medication: Partial<InsertMedication>): Promise<Medication | undefined>;
+  deleteMedication(id: string): Promise<void>;
+  
+  getAnalysesByCase(caseId: string): Promise<Analysis[]>;
+  createAnalysis(analysis: InsertAnalysis): Promise<Analysis>;
+  updateAnalysis(id: string, analysis: Partial<InsertAnalysis>): Promise<Analysis | undefined>;
+  
+  getEvidenceByCase(caseId: string): Promise<Evidence[]>;
+  getEvidenceByAnalysis(analysisId: string): Promise<Evidence[]>;
+  createEvidence(evidence: InsertEvidence): Promise<Evidence>;
+  updateEvidence(id: string, evidence: Partial<InsertEvidence>): Promise<Evidence | undefined>;
+  
+  getChatMessagesByUser(userId: string, caseId?: string): Promise<ChatMessage[]>;
+  createChatMessage(message: InsertChatMessage): Promise<ChatMessage>;
+  
+  getConsultationReportByCase(caseId: string): Promise<ConsultationReport | undefined>;
+  createConsultationReport(report: InsertConsultationReport): Promise<ConsultationReport>;
+  updateConsultationReport(id: string, report: Partial<InsertConsultationReport>): Promise<ConsultationReport | undefined>;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<string, User>;
-
-  constructor() {
-    this.users = new Map();
-  }
-
+export class PostgresStorage implements IStorage {
   async getUser(id: string): Promise<User | undefined> {
-    return this.users.get(id);
+    const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+    return result[0];
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+    return result[0];
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = randomUUID();
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
-    return user;
+    const hashedPassword = await bcrypt.hash(insertUser.password, 10);
+    const result = await db.insert(users).values({
+      ...insertUser,
+      password: hashedPassword,
+    }).returning();
+    return result[0];
+  }
+
+  async getAllUsers(): Promise<User[]> {
+    return db.select().from(users);
+  }
+
+  async getCase(id: string): Promise<Case | undefined> {
+    const result = await db.select().from(cases).where(eq(cases.id, id)).limit(1);
+    return result[0];
+  }
+
+  async getCasesByUser(userId: string): Promise<Case[]> {
+    return db.select().from(cases).where(eq(cases.userId, userId)).orderBy(desc(cases.createdAt));
+  }
+
+  async getAllCases(): Promise<Case[]> {
+    return db.select().from(cases).orderBy(desc(cases.createdAt));
+  }
+
+  async createCase(caseData: InsertCase): Promise<Case> {
+    const result = await db.insert(cases).values(caseData).returning();
+    return result[0];
+  }
+
+  async updateCase(id: string, caseData: Partial<InsertCase>): Promise<Case | undefined> {
+    const result = await db.update(cases)
+      .set({ ...caseData, updatedAt: new Date() })
+      .where(eq(cases.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteCase(id: string): Promise<void> {
+    await db.delete(cases).where(eq(cases.id, id));
+  }
+
+  async getMedicationsByCase(caseId: string): Promise<Medication[]> {
+    return db.select().from(medications)
+      .where(eq(medications.caseId, caseId))
+      .orderBy(medications.orderIndex);
+  }
+
+  async createMedication(medication: InsertMedication): Promise<Medication> {
+    const result = await db.insert(medications).values(medication).returning();
+    return result[0];
+  }
+
+  async updateMedication(id: string, medication: Partial<InsertMedication>): Promise<Medication | undefined> {
+    const result = await db.update(medications)
+      .set(medication)
+      .where(eq(medications.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteMedication(id: string): Promise<void> {
+    await db.delete(medications).where(eq(medications.id, id));
+  }
+
+  async getAnalysesByCase(caseId: string): Promise<Analysis[]> {
+    return db.select().from(analyses)
+      .where(eq(analyses.caseId, caseId))
+      .orderBy(desc(analyses.createdAt));
+  }
+
+  async createAnalysis(analysis: InsertAnalysis): Promise<Analysis> {
+    const result = await db.insert(analyses).values(analysis).returning();
+    return result[0];
+  }
+
+  async updateAnalysis(id: string, analysis: Partial<InsertAnalysis>): Promise<Analysis | undefined> {
+    const result = await db.update(analyses)
+      .set(analysis)
+      .where(eq(analyses.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getEvidenceByCase(caseId: string): Promise<Evidence[]> {
+    return db.select().from(evidence)
+      .where(eq(evidence.caseId, caseId))
+      .orderBy(desc(evidence.createdAt));
+  }
+
+  async getEvidenceByAnalysis(analysisId: string): Promise<Evidence[]> {
+    return db.select().from(evidence)
+      .where(eq(evidence.analysisId, analysisId))
+      .orderBy(desc(evidence.createdAt));
+  }
+
+  async createEvidence(evidenceData: InsertEvidence): Promise<Evidence> {
+    const result = await db.insert(evidence).values(evidenceData).returning();
+    return result[0];
+  }
+
+  async updateEvidence(id: string, evidenceData: Partial<InsertEvidence>): Promise<Evidence | undefined> {
+    const result = await db.update(evidence)
+      .set(evidenceData)
+      .where(eq(evidence.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async getChatMessagesByUser(userId: string, caseId?: string): Promise<ChatMessage[]> {
+    if (caseId) {
+      return db.select().from(chatMessages)
+        .where(and(
+          eq(chatMessages.userId, userId),
+          eq(chatMessages.caseId, caseId)
+        ))
+        .orderBy(chatMessages.createdAt);
+    }
+    return db.select().from(chatMessages)
+      .where(eq(chatMessages.userId, userId))
+      .orderBy(chatMessages.createdAt);
+  }
+
+  async createChatMessage(message: InsertChatMessage): Promise<ChatMessage> {
+    const result = await db.insert(chatMessages).values(message).returning();
+    return result[0];
+  }
+
+  async getConsultationReportByCase(caseId: string): Promise<ConsultationReport | undefined> {
+    const result = await db.select().from(consultationReports)
+      .where(eq(consultationReports.caseId, caseId))
+      .orderBy(desc(consultationReports.createdAt))
+      .limit(1);
+    return result[0];
+  }
+
+  async createConsultationReport(report: InsertConsultationReport): Promise<ConsultationReport> {
+    const result = await db.insert(consultationReports).values(report).returning();
+    return result[0];
+  }
+
+  async updateConsultationReport(id: string, report: Partial<InsertConsultationReport>): Promise<ConsultationReport | undefined> {
+    const result = await db.update(consultationReports)
+      .set({ ...report, updatedAt: new Date() })
+      .where(eq(consultationReports.id, id))
+      .returning();
+    return result[0];
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new PostgresStorage();
