@@ -5,6 +5,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/app-sidebar";
+import { FloatingChatbot } from "@/components/floating-chatbot";
 import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import Cases from "@/pages/cases";
@@ -52,32 +53,35 @@ function AuthenticatedRouter() {
   };
 
   return (
-    <SidebarProvider style={style as React.CSSProperties}>
-      <div className="flex h-screen w-full">
-        <AppSidebar />
-        <div className="flex flex-col flex-1 overflow-hidden">
-          <header className="flex items-center justify-between h-16 px-6 border-b bg-background">
-            <div className="flex items-center gap-4">
-              <SidebarTrigger data-testid="button-sidebar-toggle" />
-              <h1 className="text-lg font-semibold text-foreground">
-                Xin chào, {userData.user.fullName} – Cửa Đông Care+ Pharma
-              </h1>
-            </div>
-          </header>
-          <main className="flex-1 overflow-auto bg-background">
-            <Switch>
-              <Route path="/" component={Dashboard} />
-              <Route path="/cases" component={Cases} />
-              <Route path="/cases/new" component={NewCase} />
-              <Route path="/cases/:id" component={CaseDetail} />
-              <Route path="/library" component={Library} />
-              <Route path="/chat" component={Chat} />
-              <Route component={NotFound} />
-            </Switch>
-          </main>
+    <>
+      <SidebarProvider style={style as React.CSSProperties}>
+        <div className="flex h-screen w-full">
+          <AppSidebar />
+          <div className="flex flex-col flex-1 overflow-hidden">
+            <header className="flex items-center justify-between h-16 px-6 border-b bg-background">
+              <div className="flex items-center gap-4">
+                <SidebarTrigger data-testid="button-sidebar-toggle" />
+                <h1 className="text-lg font-semibold text-foreground">
+                  Xin chào, {userData.user.fullName} – Cửa Đông Care+ Pharma
+                </h1>
+              </div>
+            </header>
+            <main className="flex-1 overflow-auto bg-background">
+              <Switch>
+                <Route path="/" component={Dashboard} />
+                <Route path="/cases" component={Cases} />
+                <Route path="/cases/new" component={NewCase} />
+                <Route path="/cases/:id" component={CaseDetail} />
+                <Route path="/library" component={Library} />
+                <Route path="/chat" component={Chat} />
+                <Route component={NotFound} />
+              </Switch>
+            </main>
+          </div>
         </div>
-      </div>
-    </SidebarProvider>
+      </SidebarProvider>
+      <FloatingChatbot />
+    </>
   );
 }
 
