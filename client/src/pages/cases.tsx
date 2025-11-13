@@ -1,12 +1,22 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Link } from "wouter";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Plus, FileText, Search } from "lucide-react";
+import { Plus, FileText, Search, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import {
   Table,
   TableBody,
@@ -18,15 +28,44 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 import { useState, useMemo, useEffect } from "react";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 export default function Cases() {
+  const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [caseToDelete, setCaseToDelete] = useState<any>(null);
   const itemsPerPage = 10;
 
   const { data: cases, isLoading } = useQuery({
     queryKey: ["/api/cases"],
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (caseId: string) => {
+      return await apiRequest(`/api/cases/${caseId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
+      setDeleteDialogOpen(false);
+      setCaseToDelete(null);
+      toast({
+        title: "Đã xóa",
+        description: "Ca bệnh đã được xóa thành công",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Lỗi xóa ca bệnh",
+        description: error.message || "Không thể xóa ca bệnh",
+      });
+    },
   });
 
   const filteredCases = useMemo(() => {
@@ -180,9 +219,22 @@ export default function Cases() {
                       })}
                     </TableCell>
                     <TableCell>
-                      <Button variant="ghost" size="sm" asChild data-testid={`button-view-${caseData.id}`}>
-                        <Link href={`/cases/${caseData.id}`}>Xem chi tiết</Link>
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button variant="ghost" size="sm" asChild data-testid={`button-view-${caseData.id}`}>
+                          <Link href={`/cases/${caseData.id}`}>Xem chi tiết</Link>
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setCaseToDelete(caseData);
+                            setDeleteDialogOpen(true);
+                          }}
+                          data-testid={`button-delete-${caseData.id}`}
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}
@@ -235,6 +287,35 @@ export default function Cases() {
           )}
         </CardContent>
       </Card>
+
+      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Xác nhận xóa ca bệnh</AlertDialogTitle>
+            <AlertDialogDescription>
+              Bạn có chắc chắn muốn xóa ca bệnh của{" "}
+              <span className="font-semibold">{caseToDelete?.patientName}</span>?
+              <br />
+              Hành động này không thể hoàn tác và sẽ xóa tất cả dữ liệu liên quan (thuốc, phân tích, bằng chứng).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel data-testid="button-cancel-delete">Hủy</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (caseToDelete) {
+                  deleteMutation.mutate(caseToDelete.id);
+                }
+              }}
+              className="bg-destructive hover:bg-destructive/90"
+              data-testid="button-confirm-delete"
+            >
+              {deleteMutation.isPending ? "Đang xóa..." : "Xóa"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
