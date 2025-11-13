@@ -35,6 +35,16 @@ const evidenceItemSchema = z.object({
   citationCount: z.number().nullable().optional(),
 });
 
+const clinicalAnalysisSchema = z.object({
+  renalAssessment: z.string(),
+  drugDrugInteractions: z.array(z.string()),
+  drugDiseaseInteractions: z.array(z.string()),
+  doseAdjustments: z.array(z.string()),
+  monitoring: z.array(z.string()),
+  warnings: z.array(z.string()),
+  additionalInfo: z.string().optional(),
+});
+
 const MODELS = {
   DEEPSEEK: "deepseek/deepseek-chat",
   PERPLEXITY: "perplexity/sonar-pro",
@@ -184,12 +194,17 @@ function removeMarkdown(text: string): string {
   if (!text || typeof text !== 'string') return '';
   
   return text
-    // Remove ALL asterisks (both ** and * in any position)
-    .replace(/\*+/g, '')                // Remove all * characters
-    .replace(/#{1,6}\s+/g, '')          // # headings → remove
-    .replace(/^\s*[-+]\s+/gm, '')       // - or + list bullets → remove (but keep numbered lists)
-    .replace(/`([^`]+)`/g, '$1')        // `code` → code
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')  // [link text](url) → link text
+    .replace(/\*+/g, '')                          // Remove all * characters (**bold**, *italic*)
+    .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')        // __underlined__ or _italic_ → text
+    .replace(/#{1,6}\s+/g, '')                    // # headings → remove
+    .replace(/^\s*[-+•●○]\s+/gm, '')              // Bullet points (-, +, •, ●, ○) → remove
+    .replace(/^\s*\d+\.\s+/gm, '')                // Numbered lists (1., 2.) → remove number
+    .replace(/`{1,3}([^`]+)`{1,3}/g, '$1')        // `code` or ```code``` → code
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')      // [link text](url) → link text
+    .replace(/~~([^~]+)~~/g, '$1')                // ~~strikethrough~~ → text
+    .replace(/^\s*>\s+/gm, '')                    // > blockquotes → remove
+    .replace(/\|/g, '')                           // Table pipes → remove
+    .replace(/^[-=]{3,}$/gm, '')                  // Horizontal rules → remove
     .trim();
 }
 
@@ -262,14 +277,9 @@ Hãy cung cấp:
     perplexityUserPrompt
   );
 
-  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy viết lại phân tích dưới dạng văn bản thuần Tiếng Việt.
+  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy tạo phân tích có cấu trúc.
 
-QUAN TRỌNG: 
-- CHỈ trả về văn bản thuần (plain text)
-- KHÔNG dùng markdown (**, *, #, -)
-- KHÔNG dùng JSON
-- Viết bằng Tiếng Việt tự nhiên, dễ đọc
-- Sử dụng số thứ tự (1., 2., 3.) cho danh sách`;
+QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích hay markdown. Response phải bắt đầu bằng { và kết thúc bằng }.`;
 
   const deepseekVerificationUserPrompt = `Phân tích ban đầu:
 ${initialAnalysis}
@@ -277,44 +287,83 @@ ${initialAnalysis}
 Kết quả tìm kiếm bằng chứng y khoa:
 ${perplexityFindings}
 
-Hãy viết lại phân tích thành văn bản thuần Tiếng Việt, theo cấu trúc sau:
+TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
+{
+  "renalAssessment": "Đánh giá chức năng thận chi tiết",
+  "drugDrugInteractions": [
+    "Tương tác thuốc 1 với giải thích",
+    "Tương tác thuốc 2 với giải thích"
+  ],
+  "drugDiseaseInteractions": [
+    "Tương tác thuốc-bệnh 1 với giải thích"
+  ],
+  "doseAdjustments": [
+    "Khuyến nghị điều chỉnh liều 1 với lý do",
+    "Khuyến nghị điều chỉnh liều 2 với lý do"
+  ],
+  "monitoring": [
+    "Hướng dẫn theo dõi 1",
+    "Hướng dẫn theo dõi 2"
+  ],
+  "warnings": [
+    "Cảnh báo quan trọng 1"
+  ],
+  "additionalInfo": "Thông tin bổ sung từ bằng chứng y khoa"
+}
 
-Đánh giá chức năng thận:
-[Nội dung đánh giá chi tiết]
+Lưu ý: Mỗi field là STRING hoặc ARRAY of STRINGS. KHÔNG dùng markdown (**, *, #) trong nội dung.`;
 
-Tương tác thuốc-thuốc:
-1. [Tương tác thứ nhất với giải thích]
-2. [Tương tác thứ hai với giải thích]
-
-Tương tác thuốc-bệnh:
-1. [Tương tác với giải thích]
-
-Điều chỉnh liều:
-1. [Khuyến nghị điều chỉnh với lý do]
-2. [Khuyến nghị khác]
-
-Theo dõi:
-1. [Hướng dẫn theo dõi cụ thể]
-2. [Hướng dẫn khác]
-
-Cảnh báo:
-1. [Cảnh báo quan trọng]
-
-Thông tin bổ sung:
-[Thông tin từ bằng chứng y khoa]
-
-NHẮC LẠI: CHỈ văn bản thuần, KHÔNG markdown, KHÔNG JSON.`;
-
-  const finalAnalysisText = await callDeepSeek(
+  const finalAnalysisRaw = await callDeepSeek(
     deepseekVerificationSystemPrompt,
     deepseekVerificationUserPrompt,
     0.5
   );
 
+  let finalAnalysisJSON: any;
+  try {
+    let jsonString = finalAnalysisRaw.trim();
+    
+    const firstBrace = jsonString.indexOf('{');
+    const lastBrace = jsonString.lastIndexOf('}');
+    
+    if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
+      throw new Error("No valid JSON object found in response");
+    }
+    
+    jsonString = jsonString.substring(firstBrace, lastBrace + 1);
+    
+    const parsed = JSON.parse(jsonString);
+    
+    const validated = clinicalAnalysisSchema.safeParse(parsed);
+    
+    if (!validated.success) {
+      console.error("Clinical analysis validation failed:", validated.error);
+      throw new Error(`Validation failed: ${validated.error.message}`);
+    }
+    
+    finalAnalysisJSON = validated.data;
+  } catch (error: any) {
+    console.error("Failed to parse final analysis JSON:", error, "\nRaw response:", finalAnalysisRaw);
+    
+    throw new Error(`AI trả về dữ liệu không hợp lệ. Vui lòng thử lại. Chi tiết: ${error.message}`);
+  }
+
+  const sanitizedJSON = {
+    renalAssessment: removeMarkdown(finalAnalysisJSON.renalAssessment || ""),
+    drugDrugInteractions: finalAnalysisJSON.drugDrugInteractions.map((item: string) => removeMarkdown(item)),
+    drugDiseaseInteractions: finalAnalysisJSON.drugDiseaseInteractions.map((item: string) => removeMarkdown(item)),
+    doseAdjustments: finalAnalysisJSON.doseAdjustments.map((item: string) => removeMarkdown(item)),
+    monitoring: finalAnalysisJSON.monitoring.map((item: string) => removeMarkdown(item)),
+    warnings: finalAnalysisJSON.warnings.map((item: string) => removeMarkdown(item)),
+    additionalInfo: removeMarkdown(finalAnalysisJSON.additionalInfo || "")
+  };
+
+  const finalAnalysisText = formatAnalysisToText(sanitizedJSON);
+
   return {
     verified: true,
     perplexityFindings: cleanTextResponse(perplexityFindings),
-    finalAnalysis: cleanTextResponse(finalAnalysisText)
+    finalAnalysis: finalAnalysisText
   };
 }
 
