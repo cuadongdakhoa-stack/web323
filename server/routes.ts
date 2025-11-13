@@ -1,5 +1,6 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import { createRequire } from "module";
 import { storage } from "./storage";
 import { db } from "./db";
 import passport from "passport";
@@ -30,6 +31,8 @@ import multer from "multer";
 import mammoth from "mammoth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  const require = createRequire(import.meta.url);
+  
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
       if (err) {
@@ -87,9 +90,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let fileType: "pdf" | "docx" = "pdf";
 
       if (req.file.mimetype === 'application/pdf') {
-        const pdfParseModule = await import('pdf-parse');
-        const pdfParseFunc = (pdfParseModule.default || pdfParseModule) as any;
-        const pdfData = await pdfParseFunc(req.file.buffer);
+        const pdfParse = require('pdf-parse');
+        console.log('[DEBUG] pdfParse type:', typeof pdfParse);
+        console.log('[DEBUG] pdfParse:', pdfParse);
+        
+        // Try different ways to get the function
+        const parseFunc = pdfParse.default || pdfParse;
+        console.log('[DEBUG] parseFunc:', typeof parseFunc);
+        
+        const pdfData = await parseFunc(req.file.buffer);
         textContent = pdfData.text;
         fileType = "pdf";
       } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
