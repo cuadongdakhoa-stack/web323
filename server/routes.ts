@@ -29,6 +29,7 @@ import {
 } from "./openrouter";
 import multer from "multer";
 import mammoth from "mammoth";
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const require = createRequire(import.meta.url);
@@ -90,21 +91,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let fileType: "pdf" | "docx" = "pdf";
 
       if (req.file.mimetype === 'application/pdf') {
-        const pdfParse = require('pdf-parse');
-        console.log('[DEBUG] pdfParse type:', typeof pdfParse);
-        console.log('[DEBUG] pdfParse:', pdfParse);
-        
-        // Try different ways to get the function
-        const parseFunc = pdfParse.default || pdfParse;
-        console.log('[DEBUG] parseFunc:', typeof parseFunc);
-        
-        const pdfData = await parseFunc(req.file.buffer);
-        textContent = pdfData.text;
         fileType = "pdf";
+        
+        // Parse PDF using pdfjs-dist
+        try {
+          const loadingTask = pdfjsLib.getDocument({
+            data: new Uint8Array(req.file.buffer),
+            useSystemFonts: true,
+            disableFontFace: false,
+          });
+          
+          const pdfDocument = await loadingTask.promise;
+          const numPages = pdfDocument.numPages;
+          
+          // Extract text from all pages
+          for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+            const page = await pdfDocument.getPage(pageNum);
+            const textData = await page.getTextContent();
+            const pageText = textData.items.map((item: any) => item.str).join(' ');
+            textContent += pageText + '\n';
+          }
+        } catch (pdfError) {
+          console.error('[PDF Parse Error]', pdfError);
+          return res.status(500).json({ message: "Không thể đọc file PDF. Vui lòng thử lại." });
+        }
+        
       } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+        fileType = "docx";
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
         textContent = result.value;
-        fileType = "docx";
       } else {
         return res.status(400).json({ message: "Định dạng file không được hỗ trợ" });
       }
@@ -117,6 +132,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Nội dung file quá ngắn, không đủ thông tin để trích xuất" });
       }
 
+      // Send extracted text to DeepSeek AI
       const extractedData = await extractDataFromDocument(textContent, fileType);
       
       if (!extractedData || typeof extractedData !== 'object') {

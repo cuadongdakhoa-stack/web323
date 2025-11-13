@@ -445,14 +445,14 @@ Câu hỏi: ${userMessage}`;
 }
 
 export async function extractDataFromDocument(
-  fileContent: string,
+  textContent: string,
   fileType: "pdf" | "docx"
 ): Promise<any> {
-  const systemPrompt = `Bạn là chuyên gia trích xuất dữ liệu y tế. QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích hay markdown. Response phải bắt đầu bằng { và kết thúc bằng }.`;
+  const systemPrompt = `Bạn là chuyên gia trích xuất dữ liệu y tế từ tài liệu bệnh án. QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích hay markdown. Response phải bắt đầu bằng { và kết thúc bằng }.`;
 
   const userPrompt = `Trích xuất thông tin từ tài liệu ${fileType.toUpperCase()} sau và TRẢ VỀ CHỈ JSON (không có markdown, không có text khác):
 
-${fileContent}
+${textContent}
 
 JSON format (nếu thiếu thông tin thì để null):
 {
