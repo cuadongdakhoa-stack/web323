@@ -37,7 +37,7 @@ const evidenceItemSchema = z.object({
 
 const MODELS = {
   DEEPSEEK: "deepseek/deepseek-chat",
-  PERPLEXITY: "perplexity/llama-3.1-sonar-large-128k-online",
+  PERPLEXITY: "perplexity/sonar-pro",
 };
 
 interface ChatMessage {
@@ -63,19 +63,21 @@ async function callOpenRouter(
   }
 
   try {
+    const requestBody = JSON.stringify({
+      model,
+      messages,
+      temperature,
+    });
+
     const response = await fetch(`${OPENROUTER_BASE_URL}/chat/completions`, {
       method: "POST",
       headers: {
-        "Content-Type": "application/json",
+        "Content-Type": "application/json; charset=utf-8",
         Authorization: `Bearer ${OPENROUTER_API_KEY}`,
         "HTTP-Referer": "https://cuadong-care-pharma.replit.app",
-        "X-Title": "Cửa Đông Care+ Pharma",
+        "X-Title": "Cua Dong Care+ Pharma",
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature,
-      }),
+      body: requestBody,
     });
 
     if (!response.ok) {
