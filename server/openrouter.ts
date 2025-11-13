@@ -149,7 +149,16 @@ function cleanTextResponse(text: string): string {
     // Not a JSON string, continue
   }
   
-  // Step 3: Unescape common sequences  
+  // Step 3: Remove ALL markdown formatting
+  cleaned = cleaned
+    .replace(/\*\*([^*]+)\*\*/g, '$1')  // **bold** → bold
+    .replace(/\*([^*]+)\*/g, '$1')      // *italic* → italic
+    .replace(/#{1,6}\s+/g, '')          // # headings → remove
+    .replace(/^\s*[-*+]\s+/gm, '')      // - list items → remove bullet
+    .replace(/^\s*\d+\.\s+/gm, '')      // 1. numbered → remove number (keep text)
+    .replace(/`([^`]+)`/g, '$1');       // `code` → code
+  
+  // Step 4: Unescape common sequences  
   cleaned = cleaned
     .replace(/\\n/g, '\n')
     .replace(/\\t/g, '\t')
@@ -158,14 +167,11 @@ function cleanTextResponse(text: string): string {
     .replace(/\\'/g, "'")
     .replace(/\\\\/g, '\\');
   
-  // Step 4: Remove embedded JSON objects (aggressive cleaning)
-  // Pattern 1: Remove {"key":"value"} or {"key":...}
+  // Step 5: Remove embedded JSON objects (aggressive cleaning)
   cleaned = cleaned.replace(/\{\\?"[^"]*\\?":\s*\\?"[^"]*\\?"[^}]*\}/g, '');
-  
-  // Pattern 2: Remove remaining escaped braces and quotes that look like JSON
   cleaned = cleaned.replace(/\{[^}]*\\["'][^}]*\}/g, '');
   
-  // Step 5: Clean up multiple newlines and extra spaces
+  // Step 6: Clean up multiple newlines and extra spaces
   cleaned = cleaned
     .replace(/\n{3,}/g, '\n\n')  // Max 2 newlines
     .replace(/  +/g, ' ')        // Multiple spaces to single
@@ -174,42 +180,54 @@ function cleanTextResponse(text: string): string {
   return cleaned;
 }
 
+function removeMarkdown(text: string): string {
+  if (!text || typeof text !== 'string') return '';
+  
+  return text
+    .replace(/\*\*([^*]+)\*\*/g, '$1')  // **bold** → bold
+    .replace(/\*([^*]+)\*/g, '$1')      // *italic* → italic  
+    .replace(/#{1,6}\s+/g, '')          // # headings → remove
+    .replace(/^\s*[-*+]\s+/gm, '')      // - list bullets → remove
+    .replace(/`([^`]+)`/g, '$1')        // `code` → code
+    .trim();
+}
+
 function formatAnalysisToText(analysis: any): string {
   const sections: string[] = [];
   
   // Section 1: Đánh giá chức năng thận
   if (analysis.renalAssessment) {
-    sections.push(`Đánh giá chức năng thận:\n${analysis.renalAssessment}`);
+    sections.push(`Đánh giá chức năng thận:\n${removeMarkdown(analysis.renalAssessment)}`);
   }
   
   // Section 2: Tương tác thuốc-thuốc
   if (analysis.drugDrugInteractions && analysis.drugDrugInteractions.length > 0) {
-    sections.push(`Tương tác thuốc-thuốc:\n${analysis.drugDrugInteractions.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Tương tác thuốc-thuốc:\n${analysis.drugDrugInteractions.map((item: string, idx: number) => `${idx + 1}. ${removeMarkdown(item)}`).join('\n')}`);
   }
   
   // Section 3: Tương tác thuốc-bệnh
   if (analysis.drugDiseaseInteractions && analysis.drugDiseaseInteractions.length > 0) {
-    sections.push(`Tương tác thuốc-bệnh:\n${analysis.drugDiseaseInteractions.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Tương tác thuốc-bệnh:\n${analysis.drugDiseaseInteractions.map((item: string, idx: number) => `${idx + 1}. ${removeMarkdown(item)}`).join('\n')}`);
   }
   
   // Section 4: Điều chỉnh liều
   if (analysis.doseAdjustments && analysis.doseAdjustments.length > 0) {
-    sections.push(`Điều chỉnh liều:\n${analysis.doseAdjustments.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Điều chỉnh liều:\n${analysis.doseAdjustments.map((item: string, idx: number) => `${idx + 1}. ${removeMarkdown(item)}`).join('\n')}`);
   }
   
   // Section 5: Theo dõi
   if (analysis.monitoring && analysis.monitoring.length > 0) {
-    sections.push(`Theo dõi:\n${analysis.monitoring.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Theo dõi:\n${analysis.monitoring.map((item: string, idx: number) => `${idx + 1}. ${removeMarkdown(item)}`).join('\n')}`);
   }
   
   // Section 6: Cảnh báo
   if (analysis.warnings && analysis.warnings.length > 0) {
-    sections.push(`Cảnh báo:\n${analysis.warnings.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Cảnh báo:\n${analysis.warnings.map((item: string, idx: number) => `${idx + 1}. ${removeMarkdown(item)}`).join('\n')}`);
   }
   
   // Section 7: Thông tin bổ sung
   if (analysis.additionalInfo) {
-    sections.push(`Thông tin bổ sung:\n${analysis.additionalInfo}`);
+    sections.push(`Thông tin bổ sung:\n${removeMarkdown(analysis.additionalInfo)}`);
   }
   
   return sections.join('\n\n');
@@ -245,7 +263,11 @@ Hãy cung cấp:
 
   const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy viết lại phân tích dưới dạng JSON có cấu trúc để đảm bảo tính chính xác.
 
-QUAN TRỌNG: CHỈ trả về JSON hợp lệ. KHÔNG thêm markdown, KHÔNG thêm text giải thích.`;
+QUAN TRỌNG: 
+- CHỈ trả về JSON hợp lệ
+- KHÔNG dùng markdown formatting (**, *, #, -)
+- KHÔNG thêm text giải thích ngoài JSON
+- Viết nội dung văn bản thuần, không có ký tự đặc biệt`;
 
   const deepseekVerificationUserPrompt = `Phân tích ban đầu:
 ${initialAnalysis}
