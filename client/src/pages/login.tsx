@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import logoUrl from "@assets/Thiết kế chưa có tên (1)_1763041142777.ico";
+import logoUrl from "@assets/Thiết kế chưa có tên (3)_1763057609190.png";
 
 export default function Login() {
   const [, setLocation] = useLocation();
