@@ -68,6 +68,37 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get("/api/admin/seed-users", async (req, res) => {
+    try {
+      const FIXED_USERS = [
+        { username: "admin_cd", password: "admin123", fullName: "Quản trị viên Cửa Đông", role: "admin", department: "Quản lý hệ thống" },
+        { username: "duoc1", password: "duoc123", fullName: "Dược sĩ Nguyễn Văn A", role: "pharmacist", department: "Khoa Dược" },
+        { username: "duoc2", password: "duoc123", fullName: "Dược sĩ Trần Thị B", role: "pharmacist", department: "Khoa Dược" },
+        { username: "bsnoi", password: "bsnoi123", fullName: "Bác sĩ Lê Văn C", role: "doctor", department: "Khoa Nội" },
+        { username: "bsicu", password: "bsicu123", fullName: "Bác sĩ Phạm Thị D", role: "doctor", department: "Khoa Hồi sức cấp cứu" }
+      ];
+
+      const results = [];
+      for (const userData of FIXED_USERS) {
+        const existingUser = await storage.getUserByUsername(userData.username);
+        if (!existingUser) {
+          await storage.createUser(userData);
+          results.push({ username: userData.username, status: "created" });
+        } else {
+          results.push({ username: userData.username, status: "already_exists" });
+        }
+      }
+
+      res.json({ 
+        message: "Seed users completed", 
+        results 
+      });
+    } catch (error: any) {
+      console.error("Error seeding users:", error);
+      res.status(500).json({ message: "Failed to seed users", error: error.message });
+    }
+  });
+
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 },
