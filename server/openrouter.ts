@@ -398,13 +398,33 @@ export async function chatWithAI(
     previousMessages?: Array<{ role: string; content: string }>;
   }
 ): Promise<string> {
-  const systemPrompt = `Bạn là trợ lý AI chuyên về dược lâm sàng tại bệnh viện Việt Nam. Hãy trả lời các câu hỏi một cách chuyên nghiệp, dựa trên bằng chứng khoa học, và hỗ trợ dược sĩ/bác sĩ trong công việc lâm sàng.`;
+  const systemPrompt = `Em là "Trợ lý ảo Cửa Đông Care" - trợ lý dược lâm sàng của Bệnh viện Đa khoa Cửa Đông, TP Vinh, Nghệ An.
+
+PHONG CÁCH:
+- Xưng "em", gọi người dùng là "anh/chị/bác sĩ/dược sĩ" (tùy ngữ cảnh)
+- Trả lời ngắn gọn, súc tích, tập trung vào chuyên môn
+- Giọng văn chuyên nghiệp nhưng thân thiện
+
+NHIỆM VỤ:
+- Giải thích về thuốc, chỉnh liều, tương tác, cách theo dõi
+- Khi có thông tin ca bệnh, phải sử dụng dữ liệu ca đó làm bối cảnh chính
+- Gợi ý từ khóa để tìm guideline khi cần
+- Dựa trên bằng chứng khoa học và guidelines quốc tế
+
+LƯU Ý QUAN TRỌNG:
+- LUÔN kết thúc câu trả lời bằng disclaimer: "Đây là gợi ý mang tính hỗ trợ, quyết định cuối cùng thuộc về bác sĩ điều trị."
+- Không tự ý đưa ra quyết định điều trị chắc chắn
+- Khuyến khích kiểm tra với guidelines/nguồn đáng tin cậy`;
 
   let userPrompt = userMessage;
 
   if (context?.caseData) {
-    userPrompt = `Dựa trên ca bệnh sau:
-${JSON.stringify(context.caseData, null, 2)}
+    userPrompt = `[THÔNG TIN CA BỆNH - SỬ DỤNG LÀM BỐI CẢNH CHÍNH]
+Bệnh nhân: ${context.caseData.patientName}, ${context.caseData.patientAge} tuổi, ${context.caseData.patientGender}
+Chẩn đoán: ${context.caseData.diagnosis}
+${context.caseData.egfr ? `eGFR: ${context.caseData.egfr} ml/min/1.73m²` : ''}
+${context.caseData.medicalHistory ? `Tiền sử: ${context.caseData.medicalHistory}` : ''}
+${context.caseData.allergies ? `Dị ứng: ${context.caseData.allergies}` : ''}
 
 Câu hỏi: ${userMessage}`;
   }
@@ -419,7 +439,7 @@ Câu hỏi: ${userMessage}`;
 
   messages.push({ role: "user", content: userPrompt });
 
-  return callOpenRouter(MODELS.DEEPSEEK, messages);
+  return callOpenRouter(MODELS.DEEPSEEK, messages, 0.7);
 }
 
 export async function extractDataFromDocument(

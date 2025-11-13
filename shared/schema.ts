@@ -113,24 +113,6 @@ export const insertEvidenceSchema = createInsertSchema(evidence).omit({
 export type InsertEvidence = z.infer<typeof insertEvidenceSchema>;
 export type Evidence = typeof evidence.$inferSelect;
 
-export const chatMessages = pgTable("chat_messages", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  userId: varchar("user_id").notNull().references(() => users.id),
-  caseId: varchar("case_id").references(() => cases.id, { onDelete: "cascade" }),
-  role: text("role").notNull(),
-  content: text("content").notNull(),
-  model: text("model"),
-  metadata: jsonb("metadata"),
-  createdAt: timestamp("created_at").notNull().defaultNow(),
-});
-
-export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
-  id: true,
-  createdAt: true,
-});
-export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
-export type ChatMessage = typeof chatMessages.$inferSelect;
-
 export const consultationReports = pgTable("consultation_reports", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   caseId: varchar("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }),
@@ -180,3 +162,19 @@ export const insertConsultationReportSchema = createInsertSchema(consultationRep
 });
 export type InsertConsultationReport = z.infer<typeof insertConsultationReportSchema>;
 export type ConsultationReport = typeof consultationReports.$inferSelect;
+
+export const chatMessages = pgTable("chat_messages", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  userId: varchar("user_id").notNull().references(() => users.id),
+  message: text("message").notNull(),
+  response: text("response").notNull(),
+  caseId: varchar("case_id").references(() => cases.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
+export type ChatMessage = typeof chatMessages.$inferSelect;

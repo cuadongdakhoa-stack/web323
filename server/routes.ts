@@ -496,14 +496,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/chat", requireAuth, async (req, res) => {
     try {
-      const validatedData = insertChatMessageSchema.parse({
-        ...req.body,
-        userId: req.user!.id,
+      const { message: userMessage, caseId } = req.body;
+      
+      if (!userMessage || typeof userMessage !== 'string') {
+        return res.status(400).json({ message: "Tin nhắn không hợp lệ" });
+      }
+
+      let caseData;
+      if (caseId) {
+        caseData = await storage.getCase(caseId);
+        if (!caseData) {
+          return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+        }
+      }
+
+      const aiResponse = await chatWithAI(userMessage, {
+        caseData,
       });
-      const message = await storage.createChatMessage(validatedData);
-      res.status(201).json(message);
+
+      const validatedData = insertChatMessageSchema.parse({
+        userId: req.user!.id,
+        message: userMessage,
+        response: aiResponse,
+        caseId: caseId || null,
+      });
+
+      const savedMessage = await storage.createChatMessage(validatedData);
+      res.status(201).json(savedMessage);
     } catch (error: any) {
-      res.status(400).json({ message: error.message });
+      console.error("Chat error:", error);
+      res.status(500).json({ message: error.message || "Lỗi khi xử lý chat" });
     }
   });
 
