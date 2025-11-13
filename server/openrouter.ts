@@ -262,13 +262,14 @@ Hãy cung cấp:
     perplexityUserPrompt
   );
 
-  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy viết lại phân tích dưới dạng JSON có cấu trúc để đảm bảo tính chính xác.
+  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy viết lại phân tích dưới dạng văn bản thuần Tiếng Việt.
 
 QUAN TRỌNG: 
-- CHỈ trả về JSON hợp lệ
-- KHÔNG dùng markdown formatting (**, *, #, -)
-- KHÔNG thêm text giải thích ngoài JSON
-- Viết nội dung văn bản thuần, không có ký tự đặc biệt`;
+- CHỈ trả về văn bản thuần (plain text)
+- KHÔNG dùng markdown (**, *, #, -)
+- KHÔNG dùng JSON
+- Viết bằng Tiếng Việt tự nhiên, dễ đọc
+- Sử dụng số thứ tự (1., 2., 3.) cho danh sách`;
 
   const deepseekVerificationUserPrompt = `Phân tích ban đầu:
 ${initialAnalysis}
@@ -276,70 +277,44 @@ ${initialAnalysis}
 Kết quả tìm kiếm bằng chứng y khoa:
 ${perplexityFindings}
 
-Hãy viết lại phân tích dưới dạng JSON có cấu trúc. TRẢ VỀ CHỈ JSON (không markdown, không text khác):
+Hãy viết lại phân tích thành văn bản thuần Tiếng Việt, theo cấu trúc sau:
 
-{
-  "renalAssessment": "Đánh giá chi tiết về chức năng thận và tác động đến các thuốc",
-  "drugDrugInteractions": [
-    "Tương tác thuốc-thuốc 1 với giải thích chi tiết",
-    "Tương tác thuốc-thuốc 2 với giải thích chi tiết"
-  ],
-  "drugDiseaseInteractions": [
-    "Tương tác thuốc-bệnh 1 với giải thích chi tiết"
-  ],
-  "doseAdjustments": [
-    "Khuyến nghị điều chỉnh liều 1 với lý do cụ thể",
-    "Khuyến nghị điều chỉnh liều 2 với lý do cụ thể"
-  ],
-  "monitoring": [
-    "Theo dõi 1 với hướng dẫn cụ thể",
-    "Theo dõi 2 với hướng dẫn cụ thể"
-  ],
-  "warnings": [
-    "Cảnh báo 1 với mức độ nghiêm trọng",
-    "Cảnh báo 2 với mức độ nghiêm trọng"
-  ],
-  "additionalInfo": "Thông tin bổ sung quan trọng từ bằng chứng y khoa"
-}
+Đánh giá chức năng thận:
+[Nội dung đánh giá chi tiết]
 
-CHỈ TRẢ VỀ JSON HỢP LỆ.`;
+Tương tác thuốc-thuốc:
+1. [Tương tác thứ nhất với giải thích]
+2. [Tương tác thứ hai với giải thích]
 
-  const rawJsonResponse = await callDeepSeek(
+Tương tác thuốc-bệnh:
+1. [Tương tác với giải thích]
+
+Điều chỉnh liều:
+1. [Khuyến nghị điều chỉnh với lý do]
+2. [Khuyến nghị khác]
+
+Theo dõi:
+1. [Hướng dẫn theo dõi cụ thể]
+2. [Hướng dẫn khác]
+
+Cảnh báo:
+1. [Cảnh báo quan trọng]
+
+Thông tin bổ sung:
+[Thông tin từ bằng chứng y khoa]
+
+NHẮC LẠI: CHỈ văn bản thuần, KHÔNG markdown, KHÔNG JSON.`;
+
+  const finalAnalysisText = await callDeepSeek(
     deepseekVerificationSystemPrompt,
     deepseekVerificationUserPrompt,
     0.5
   );
 
-  // Parse JSON response
-  let structuredAnalysis: any;
-  try {
-    const cleaned = rawJsonResponse.trim()
-      .replace(/^```json\s*/i, '')
-      .replace(/^```\s*/i, '')
-      .replace(/```\s*$/i, '')
-      .trim();
-    structuredAnalysis = JSON.parse(cleaned);
-  } catch (error) {
-    console.error('[verifyWithPipeline] Failed to parse JSON:', error);
-    // Fallback: use raw text
-    structuredAnalysis = {
-      renalAssessment: "Không thể phân tích",
-      drugDrugInteractions: [],
-      drugDiseaseInteractions: [],
-      doseAdjustments: [],
-      monitoring: [],
-      warnings: [rawJsonResponse],
-      additionalInfo: ""
-    };
-  }
-
-  // Format JSON to readable Vietnamese text
-  const formattedAnalysis = formatAnalysisToText(structuredAnalysis);
-
   return {
     verified: true,
     perplexityFindings: cleanTextResponse(perplexityFindings),
-    finalAnalysis: formattedAnalysis
+    finalAnalysis: cleanTextResponse(finalAnalysisText)
   };
 }
 
