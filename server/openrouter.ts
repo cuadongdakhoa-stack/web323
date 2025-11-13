@@ -130,6 +130,43 @@ export async function callPerplexity(
   );
 }
 
+function cleanTextResponse(text: string): string {
+  // Remove markdown code blocks
+  let cleaned = text
+    .replace(/^```[\w]*\s*/gm, '')
+    .replace(/```\s*$/gm, '');
+  
+  // Try to unescape JSON strings if present
+  try {
+    // If text looks like a JSON string, parse it
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+      cleaned = JSON.parse(cleaned);
+    }
+  } catch {
+    // Not a JSON string, continue
+  }
+  
+  // Unescape common sequences
+  cleaned = cleaned
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'")
+    .replace(/\\\\/g, '\\');
+  
+  // Remove embedded JSON objects/arrays from text (like {"key":"value"} in middle of text)
+  cleaned = cleaned.replace(/\{[^}]*"[^"]*"[^}]*\}/g, (match) => {
+    try {
+      JSON.parse(match);
+      return ''; // Remove valid JSON objects
+    } catch {
+      return match; // Keep if not valid JSON
+    }
+  });
+  
+  return cleaned.trim();
+}
+
 export async function verifyWithPipeline(
   initialAnalysis: string,
   verificationQuery: string
@@ -158,7 +195,9 @@ Hãy cung cấp:
     perplexityUserPrompt
   );
 
-  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy viết lại phân tích của bạn để đảm bảo tính chính xác và dựa trên bằng chứng.`;
+  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy viết lại phân tích của bạn để đảm bảo tính chính xác và dựa trên bằng chứng.
+
+QUAN TRỌNG: Chỉ trả về văn bản thuần (plain text) bằng tiếng Việt. KHÔNG trả về JSON, KHÔNG sử dụng escape sequences, KHÔNG nhúng JSON objects trong text.`;
 
   const deepseekVerificationUserPrompt = `Phân tích ban đầu của bạn:
 ${initialAnalysis}
@@ -166,14 +205,15 @@ ${initialAnalysis}
 Kết quả tìm kiếm bằng chứng y khoa:
 ${perplexityFindings}
 
-Hãy viết lại phân tích của bạn, đảm bảo:
+Hãy viết lại phân tích của bạn dưới dạng VĂN BẢN THUẦN, đảm bảo:
 1. Chính xác dựa trên bằng chứng khoa học
 2. Bổ sung thông tin quan trọng từ kết quả tìm kiếm
 3. Sửa đổi những thông tin không chính xác (nếu có)
 4. Giữ nguyên cấu trúc và độ chi tiết
-5. Viết bằng tiếng Việt chuyên nghiệp`;
+5. Viết bằng tiếng Việt chuyên nghiệp
+6. CHỈ TRẢ VỀ VĂN BẢN, KHÔNG JSON, KHÔNG escape sequences`;
 
-  const finalAnalysis = await callDeepSeek(
+  const rawFinalAnalysis = await callDeepSeek(
     deepseekVerificationSystemPrompt,
     deepseekVerificationUserPrompt,
     0.5
@@ -181,8 +221,8 @@ Hãy viết lại phân tích của bạn, đảm bảo:
 
   return {
     verified: true,
-    perplexityFindings,
-    finalAnalysis,
+    perplexityFindings: cleanTextResponse(perplexityFindings),
+    finalAnalysis: cleanTextResponse(rawFinalAnalysis)
   };
 }
 
