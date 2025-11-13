@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   FileText,
   BookOpen,
-  MessageSquare,
   LogOut,
 } from "lucide-react";
 import {
@@ -39,11 +38,6 @@ const menuItems = [
     title: "Thư viện",
     url: "/library",
     icon: BookOpen,
-  },
-  {
-    title: "Chat AI",
-    url: "/chat",
-    icon: MessageSquare,
   },
 ];
 
