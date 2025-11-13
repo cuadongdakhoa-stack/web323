@@ -463,7 +463,7 @@ export default function CaseDetail() {
                             <AlertDescription className="whitespace-pre-wrap text-sm">
                               {typeof analysis.result === 'string' 
                                 ? analysis.result 
-                                : JSON.stringify(analysis.result, null, 2)}
+                                : analysis.result.finalAnalysis || JSON.stringify(analysis.result, null, 2)}
                             </AlertDescription>
                           ) : analysis.error ? (
                             <AlertDescription className="text-sm text-destructive">
