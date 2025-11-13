@@ -22,7 +22,7 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
-import { Activity } from "lucide-react";
+import logoUrl from "@assets/Thiết kế chưa có tên (1)_1763041142777.ico";
 
 const menuItems = [
   {
@@ -74,9 +74,7 @@ export function AppSidebar() {
     <Sidebar>
       <SidebarHeader className="border-b p-4">
         <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary rounded-md flex items-center justify-center">
-            <Activity className="w-6 h-6 text-primary-foreground" />
-          </div>
+          <img src={logoUrl} alt="Cửa Đông Care+ Logo" className="w-10 h-10" />
           <div>
             <h2 className="font-semibold text-sm">Cửa Đông Care+</h2>
             <p className="text-xs text-muted-foreground">Pharma Assistant</p>

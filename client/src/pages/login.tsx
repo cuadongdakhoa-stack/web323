@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Activity } from "lucide-react";
+import logoUrl from "@assets/Thiết kế chưa có tên (1)_1763041142777.ico";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -48,9 +48,7 @@ export default function Login() {
       <Card className="w-full max-w-md">
         <CardHeader className="space-y-2 text-center">
           <div className="flex justify-center mb-4">
-            <div className="w-16 h-16 bg-primary rounded-lg flex items-center justify-center">
-              <Activity className="w-10 h-10 text-primary-foreground" />
-            </div>
+            <img src={logoUrl} alt="Cửa Đông Care+ Pharma Logo" className="w-16 h-16" />
           </div>
           <CardTitle className="text-2xl font-semibold">Cửa Đông Care+ Pharma</CardTitle>
           <CardDescription className="text-base">
