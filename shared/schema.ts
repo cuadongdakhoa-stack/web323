@@ -145,21 +145,17 @@ export const consultationReports = pgTable("consultation_reports", {
 
 export const analysisResultSchema = z.object({
   initialAnalysis: z.object({
-    renalAssessment: z.string(),
-    drugDrugInteractions: z.array(z.string()),
-    drugDiseaseInteractions: z.array(z.string()),
-    doseAdjustments: z.array(z.string()),
-    monitoring: z.array(z.string()),
-    warnings: z.array(z.string()),
-  }),
-  verified: z.boolean(),
-  evidenceFindings: z.array(z.object({
-    title: z.string(),
-    source: z.string(),
-    summary: z.string(),
-  })),
-  finalAnalysis: z.string(),
-});
+    renalAssessment: z.string().optional(),
+    drugDrugInteractions: z.array(z.string()).optional(),
+    drugDiseaseInteractions: z.array(z.string()).optional(),
+    doseAdjustments: z.array(z.string()).optional(),
+    monitoring: z.array(z.string()).optional(),
+    warnings: z.array(z.string()).optional(),
+  }).optional(),
+  verified: z.boolean().optional(),
+  evidenceFindings: z.array(z.any()).optional(),
+  finalAnalysis: z.union([z.string(), z.object({}).passthrough()]).optional(),
+}).passthrough();
 
 export const reportContentSchema = z.object({
   consultationDate: z.string().optional(),
