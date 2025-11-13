@@ -131,14 +131,17 @@ export async function callPerplexity(
 }
 
 function cleanTextResponse(text: string): string {
-  // Remove markdown code blocks
-  let cleaned = text
+  if (!text || typeof text !== 'string') return '';
+  
+  let cleaned = text;
+  
+  // Step 1: Remove markdown code blocks
+  cleaned = cleaned
     .replace(/^```[\w]*\s*/gm, '')
     .replace(/```\s*$/gm, '');
   
-  // Try to unescape JSON strings if present
+  // Step 2: If entire text is a JSON-escaped string, parse it once
   try {
-    // If text looks like a JSON string, parse it
     if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
       cleaned = JSON.parse(cleaned);
     }
@@ -146,25 +149,70 @@ function cleanTextResponse(text: string): string {
     // Not a JSON string, continue
   }
   
-  // Unescape common sequences
+  // Step 3: Unescape common sequences  
   cleaned = cleaned
     .replace(/\\n/g, '\n')
     .replace(/\\t/g, '\t')
+    .replace(/\\r/g, '\r')
     .replace(/\\"/g, '"')
     .replace(/\\'/g, "'")
     .replace(/\\\\/g, '\\');
   
-  // Remove embedded JSON objects/arrays from text (like {"key":"value"} in middle of text)
-  cleaned = cleaned.replace(/\{[^}]*"[^"]*"[^}]*\}/g, (match) => {
-    try {
-      JSON.parse(match);
-      return ''; // Remove valid JSON objects
-    } catch {
-      return match; // Keep if not valid JSON
-    }
-  });
+  // Step 4: Remove embedded JSON objects (aggressive cleaning)
+  // Pattern 1: Remove {"key":"value"} or {"key":...}
+  cleaned = cleaned.replace(/\{\\?"[^"]*\\?":\s*\\?"[^"]*\\?"[^}]*\}/g, '');
   
-  return cleaned.trim();
+  // Pattern 2: Remove remaining escaped braces and quotes that look like JSON
+  cleaned = cleaned.replace(/\{[^}]*\\["'][^}]*\}/g, '');
+  
+  // Step 5: Clean up multiple newlines and extra spaces
+  cleaned = cleaned
+    .replace(/\n{3,}/g, '\n\n')  // Max 2 newlines
+    .replace(/  +/g, ' ')        // Multiple spaces to single
+    .trim();
+  
+  return cleaned;
+}
+
+function formatAnalysisToText(analysis: any): string {
+  const sections: string[] = [];
+  
+  // Section 1: Đánh giá chức năng thận
+  if (analysis.renalAssessment) {
+    sections.push(`**Đánh giá chức năng thận:**\n${analysis.renalAssessment}`);
+  }
+  
+  // Section 2: Tương tác thuốc-thuốc
+  if (analysis.drugDrugInteractions && analysis.drugDrugInteractions.length > 0) {
+    sections.push(`**Tương tác thuốc-thuốc:**\n${analysis.drugDrugInteractions.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+  }
+  
+  // Section 3: Tương tác thuốc-bệnh
+  if (analysis.drugDiseaseInteractions && analysis.drugDiseaseInteractions.length > 0) {
+    sections.push(`**Tương tác thuốc-bệnh:**\n${analysis.drugDiseaseInteractions.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+  }
+  
+  // Section 4: Điều chỉnh liều
+  if (analysis.doseAdjustments && analysis.doseAdjustments.length > 0) {
+    sections.push(`**Điều chỉnh liều:**\n${analysis.doseAdjustments.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+  }
+  
+  // Section 5: Theo dõi
+  if (analysis.monitoring && analysis.monitoring.length > 0) {
+    sections.push(`**Theo dõi:**\n${analysis.monitoring.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+  }
+  
+  // Section 6: Cảnh báo
+  if (analysis.warnings && analysis.warnings.length > 0) {
+    sections.push(`**Cảnh báo:**\n${analysis.warnings.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+  }
+  
+  // Section 7: Thông tin bổ sung
+  if (analysis.additionalInfo) {
+    sections.push(`**Thông tin bổ sung:**\n${analysis.additionalInfo}`);
+  }
+  
+  return sections.join('\n\n');
 }
 
 export async function verifyWithPipeline(
@@ -195,34 +243,80 @@ Hãy cung cấp:
     perplexityUserPrompt
   );
 
-  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy viết lại phân tích của bạn để đảm bảo tính chính xác và dựa trên bằng chứng.
+  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy viết lại phân tích dưới dạng JSON có cấu trúc để đảm bảo tính chính xác.
 
-QUAN TRỌNG: Chỉ trả về văn bản thuần (plain text) bằng tiếng Việt. KHÔNG trả về JSON, KHÔNG sử dụng escape sequences, KHÔNG nhúng JSON objects trong text.`;
+QUAN TRỌNG: CHỈ trả về JSON hợp lệ. KHÔNG thêm markdown, KHÔNG thêm text giải thích.`;
 
-  const deepseekVerificationUserPrompt = `Phân tích ban đầu của bạn:
+  const deepseekVerificationUserPrompt = `Phân tích ban đầu:
 ${initialAnalysis}
 
 Kết quả tìm kiếm bằng chứng y khoa:
 ${perplexityFindings}
 
-Hãy viết lại phân tích của bạn dưới dạng VĂN BẢN THUẦN, đảm bảo:
-1. Chính xác dựa trên bằng chứng khoa học
-2. Bổ sung thông tin quan trọng từ kết quả tìm kiếm
-3. Sửa đổi những thông tin không chính xác (nếu có)
-4. Giữ nguyên cấu trúc và độ chi tiết
-5. Viết bằng tiếng Việt chuyên nghiệp
-6. CHỈ TRẢ VỀ VĂN BẢN, KHÔNG JSON, KHÔNG escape sequences`;
+Hãy viết lại phân tích dưới dạng JSON có cấu trúc. TRẢ VỀ CHỈ JSON (không markdown, không text khác):
 
-  const rawFinalAnalysis = await callDeepSeek(
+{
+  "renalAssessment": "Đánh giá chi tiết về chức năng thận và tác động đến các thuốc",
+  "drugDrugInteractions": [
+    "Tương tác thuốc-thuốc 1 với giải thích chi tiết",
+    "Tương tác thuốc-thuốc 2 với giải thích chi tiết"
+  ],
+  "drugDiseaseInteractions": [
+    "Tương tác thuốc-bệnh 1 với giải thích chi tiết"
+  ],
+  "doseAdjustments": [
+    "Khuyến nghị điều chỉnh liều 1 với lý do cụ thể",
+    "Khuyến nghị điều chỉnh liều 2 với lý do cụ thể"
+  ],
+  "monitoring": [
+    "Theo dõi 1 với hướng dẫn cụ thể",
+    "Theo dõi 2 với hướng dẫn cụ thể"
+  ],
+  "warnings": [
+    "Cảnh báo 1 với mức độ nghiêm trọng",
+    "Cảnh báo 2 với mức độ nghiêm trọng"
+  ],
+  "additionalInfo": "Thông tin bổ sung quan trọng từ bằng chứng y khoa"
+}
+
+CHỈ TRẢ VỀ JSON HỢP LỆ.`;
+
+  const rawJsonResponse = await callDeepSeek(
     deepseekVerificationSystemPrompt,
     deepseekVerificationUserPrompt,
     0.5
   );
 
+  // Parse JSON response
+  let structuredAnalysis: any;
+  try {
+    const cleaned = rawJsonResponse.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    structuredAnalysis = JSON.parse(cleaned);
+  } catch (error) {
+    console.error('[verifyWithPipeline] Failed to parse JSON:', error);
+    // Fallback: use raw text
+    structuredAnalysis = {
+      renalAssessment: "Không thể phân tích",
+      drugDrugInteractions: [],
+      drugDiseaseInteractions: [],
+      doseAdjustments: [],
+      monitoring: [],
+      warnings: [rawJsonResponse],
+      additionalInfo: ""
+    };
+  }
+
+  // Format JSON to readable Vietnamese text
+  const formattedAnalysis = formatAnalysisToText(structuredAnalysis);
+
   return {
     verified: true,
     perplexityFindings: cleanTextResponse(perplexityFindings),
-    finalAnalysis: cleanTextResponse(rawFinalAnalysis)
+    finalAnalysis: formattedAnalysis
   };
 }
 
