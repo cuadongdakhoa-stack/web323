@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { useMutation } from "@tanstack/react-query";
-import { apiRequest } from "@/lib/queryClient";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,14 +22,15 @@ export default function Login() {
         body: JSON.stringify(credentials),
       });
     },
-    onSuccess: () => {
+    onSuccess: async () => {
       toast({
         title: "Đăng nhập thành công",
         description: "Chào mừng đến với Cửa Đông Care+ Pharma",
       });
+      await queryClient.invalidateQueries({ queryKey: ["/api/auth/me"] });
       setTimeout(() => {
-        window.location.href = "/";
-      }, 800);
+        setLocation("/");
+      }, 500);
     },
     onError: (error: any) => {
       toast({
