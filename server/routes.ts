@@ -27,7 +27,6 @@ import {
   verifyWithPipeline
 } from "./openrouter";
 import multer from "multer";
-import * as pdfParse from "pdf-parse";
 import mammoth from "mammoth";
 
 export async function registerRoutes(app: Express): Promise<Server> {
@@ -88,7 +87,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let fileType: "pdf" | "docx" = "pdf";
 
       if (req.file.mimetype === 'application/pdf') {
-        const pdfData = await pdfParse(req.file.buffer);
+        const pdfParseModule = await import('pdf-parse');
+        const pdfParseFunc = (pdfParseModule.default || pdfParseModule) as any;
+        const pdfData = await pdfParseFunc(req.file.buffer);
         textContent = pdfData.text;
         fileType = "pdf";
       } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
