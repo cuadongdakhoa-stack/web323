@@ -163,6 +163,7 @@ workspace/
 - `GET /api/cases` - Danh sách ca bệnh (của user hoặc tất cả nếu admin)
 - `GET /api/cases/:id` - Chi tiết ca bệnh
 - `POST /api/cases` - Tạo ca bệnh mới
+- `POST /api/cases/extract` - Upload PDF/Word và tự động trích xuất thông tin bệnh nhân (DeepSeek AI)
 - `PATCH /api/cases/:id` - Cập nhật ca bệnh
 - `DELETE /api/cases/:id` - Xóa ca bệnh
 
@@ -306,8 +307,8 @@ npx tsx server/seed.ts  # Seed 5 fixed users
 - [x] Floating AI chatbot assistant
 - [x] Consultation report generation
 - [x] OpenRouter API integration (DeepSeek + Perplexity)
+- [x] PDF/Word upload with auto-extraction (DeepSeek AI)
 - [ ] AI analysis integration (pipeline)
-- [ ] PDF/Word upload with auto-extraction
 
 ### Phase 2: Advanced Features
 - [ ] Complete AI analysis pipeline (DeepSeek → Perplexity → DeepSeek)

@@ -95,24 +95,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const result = await mammoth.extractRawText({ buffer: req.file.buffer });
         textContent = result.value;
         fileType = "docx";
+      } else {
+        return res.status(400).json({ message: "Định dạng file không được hỗ trợ" });
       }
 
       if (!textContent || textContent.trim().length === 0) {
-        return res.status(400).json({ message: "Không thể trích xuất nội dung từ file" });
+        return res.status(400).json({ message: "File rỗng hoặc không thể trích xuất nội dung" });
+      }
+
+      if (textContent.trim().length < 50) {
+        return res.status(400).json({ message: "Nội dung file quá ngắn, không đủ thông tin để trích xuất" });
       }
 
       const extractedData = await extractDataFromDocument(textContent, fileType);
       
-      let parsedData;
-      try {
-        parsedData = typeof extractedData === 'string' ? JSON.parse(extractedData) : extractedData;
-      } catch (parseError) {
-        return res.status(500).json({ message: "Lỗi phân tích dữ liệu từ AI" });
+      if (!extractedData || typeof extractedData !== 'object') {
+        return res.status(500).json({ message: "AI không trả về dữ liệu hợp lệ" });
       }
 
-      res.json(parsedData);
+      res.setHeader('Content-Type', 'application/json; charset=utf-8');
+      res.json(extractedData);
     } catch (error: any) {
-      res.status(500).json({ message: error.message || "Lỗi xử lý file" });
+      console.error("[Extract Error]", error);
+      
+      if (error.message.includes("OPENROUTER_API_KEY")) {
+        return res.status(500).json({ message: "Lỗi cấu hình API key" });
+      }
+      
+      if (error.message.includes("phân tích dữ liệu từ AI")) {
+        return res.status(500).json({ message: "AI không thể xử lý file này. Vui lòng thử file khác hoặc nhập thủ công." });
+      }
+      
+      res.status(500).json({ message: "Lỗi xử lý file. Vui lòng thử lại hoặc nhập thủ công." });
     }
   });
 

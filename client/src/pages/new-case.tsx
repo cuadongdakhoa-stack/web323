@@ -79,6 +79,15 @@ export default function NewCase() {
       return response.json();
     },
     onSuccess: (data) => {
+      if (!data || typeof data !== 'object') {
+        toast({
+          variant: "destructive",
+          title: "Lỗi dữ liệu",
+          description: "Dữ liệu trích xuất không hợp lệ",
+        });
+        return;
+      }
+
       setFormData(prev => ({
         ...prev,
         patientName: data.patientName || prev.patientName,
@@ -91,22 +100,28 @@ export default function NewCase() {
         allergies: data.allergies || prev.allergies,
       }));
 
-      if (data.medications && Array.isArray(data.medications)) {
-        const extractedMeds = data.medications.map((med: any, idx: number) => ({
-          id: `extracted-${idx}`,
-          drugName: med.drugName || '',
-          prescribedDose: med.dose || '',
-          prescribedFrequency: med.frequency || '',
-          prescribedRoute: med.route || 'Uống',
-          indication: '',
-        }));
-        setMedications(extractedMeds);
+      if (data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
+        const extractedMeds = data.medications
+          .filter((med: any) => med.drugName && med.drugName.trim())
+          .map((med: any, idx: number) => ({
+            id: `extracted-${Date.now()}-${idx}`,
+            drugName: med.drugName.trim(),
+            prescribedDose: med.dose || '',
+            prescribedFrequency: med.frequency || '',
+            prescribedRoute: med.route || 'Uống',
+            indication: '',
+          }));
+        
+        if (extractedMeds.length > 0) {
+          setMedications(prev => [...prev, ...extractedMeds]);
+        }
       }
 
       setSelectedFile(null);
+      const medCount = data.medications?.filter((m: any) => m.drugName)?.length || 0;
       toast({
         title: "Trích xuất thành công",
-        description: `Đã điền tự động ${data.medications?.length || 0} loại thuốc`,
+        description: `Đã điền tự động thông tin bệnh nhân${medCount > 0 ? ` và ${medCount} loại thuốc` : ''}`,
       });
     },
     onError: (error: any) => {
