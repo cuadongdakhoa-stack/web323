@@ -91,28 +91,6 @@ export default function Login() {
               {loginMutation.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
             </Button>
           </form>
-          <div className="mt-6 pt-4 border-t">
-            <p className="text-sm text-muted-foreground text-center mb-2">
-              Tài khoản demo:
-            </p>
-            <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-              <div>
-                <strong>admin_cd</strong> - Quản trị viên
-              </div>
-              <div>
-                <strong>duoc1</strong> - Dược sĩ 1
-              </div>
-              <div>
-                <strong>duoc2</strong> - Dược sĩ 2
-              </div>
-              <div>
-                <strong>bsnoi</strong> - Bác sĩ nội
-              </div>
-              <div>
-                <strong>bsicu</strong> - Bác sĩ ICU
-              </div>
-            </div>
-          </div>
         </CardContent>
       </Card>
     </div>
