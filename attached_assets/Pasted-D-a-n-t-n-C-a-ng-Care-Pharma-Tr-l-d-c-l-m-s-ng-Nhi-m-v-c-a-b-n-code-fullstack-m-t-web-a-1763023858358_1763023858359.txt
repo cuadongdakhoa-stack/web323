@@ -1,0 +1,575 @@
+Dự án tên: Cửa Đông Care+ Pharma – Trợ lý dược lâm sàng
+Nhiệm vụ của bạn: code fullstack một web app theo yêu cầu bên dưới.
+
+Hãy đọc kỹ và bám sát từng phần.
+
+1. Mô tả tổng quan
+
+Xây dựng một ứng dụng web nội bộ cho Bệnh viện Đa khoa Cửa Đông (TP Vinh, Nghệ An), dùng cho dược sĩ lâm sàng và bác sĩ.
+
+Ứng dụng có các chức năng chính:
+
+Tầng 1: Tạo & chuẩn hóa dữ liệu ca bệnh từ form + file PDF/Word (AI đọc và tự điền).
+
+Tầng 2: Phân tích ca lâm sàng, chỉnh liều, kiểm tra tương tác thuốc (DeepSeek).
+
+Tầng 3: Tìm guideline & nghiên cứu gốc (Perplexity + Scite).
+
+Tầng 4: Tự tạo “Phiếu tư vấn thuốc chuẩn hóa” in được.
+
+Tầng 5: Lưu trữ thư viện ca, xem lại & phân tích xu hướng.
+
+Tầng 6: Chatbot 2 chiều – “Trợ lý ảo Cửa Đông Care” cho BS/DS hỏi đáp.
+
+Chỉ sử dụng 3 AI:
+
+DeepSeek
+
+Perplexity
+
+Scite
+
+Tuyệt đối không dùng thêm AI khác (ChatGPT, Claude, Copilot…).
+
+2. Yêu cầu kỹ thuật chung
+
+Là web app fullstack:
+
+Có frontend giao diện web.
+
+Có backend xử lý logic, gọi API AI, xử lý file.
+
+Có database để lưu:
+
+Tài khoản người dùng.
+
+Ca bệnh, dữ liệu chuẩn hóa.
+
+Kết quả phân tích, bằng chứng, phiếu tư vấn.
+
+Log trò chuyện chatbot.
+
+Tất cả API key (DeepSeek, Perplexity, Scite) phải:
+
+Được cấu hình qua biến môi trường (ví dụ .env),
+
+Chỉ dùng ở backend, không lộ ra frontend.
+
+Ngôn ngữ giao diện: Tiếng Việt.
+
+UI thân thiện, dễ dùng cho nhân viên y tế, ưu tiên thao tác nhanh, ít phải click.
+
+3. Module đăng nhập (Auth)
+3.1. Yêu cầu
+
+Có trang /login với:
+
+Trường Tên đăng nhập
+
+Trường Mật khẩu
+
+Nút “Đăng nhập”
+
+Nếu chưa đăng nhập:
+
+Mọi route nội bộ (dashboard, cases, chat…) phải redirect về /login.
+
+Sau khi đăng nhập thành công:
+
+Điều hướng đến /dashboard.
+
+Hiển thị lời chào ở góc trên:
+
+“Xin chào, [username] – Cửa Đông Care+ Pharma”
+
+Có nút Đăng xuất.
+
+3.2. 5 tài khoản cố định
+
+Tạo sẵn 5 tài khoản (có thể seed DB hoặc hardcode ban đầu):
+
+admin_cd / CuaDong@2025
+
+duoc1 / DuocCD@2025
+
+duoc2 / DuocCD@2025
+
+bsnoi / NoiCD@2025
+
+bsicu / ICUcd@2025
+
+Có thể thêm trường “vai trò” (role) đơn giản: admin, duoc, bacsi.
+
+Quy tắc:
+
+admin_cd: xem tất cả ca + thống kê.
+
+Tài khoản khác: có thể xem tất cả ca (để đơn giản) hoặc chỉ ca mình tạo (tuỳ bạn nhưng hãy ghi rõ trong code/comment).
+
+4. Cấu trúc màn hình (route)
+
+Tối thiểu cần các màn hình:
+
+/login – Đăng nhập.
+
+/dashboard – Tổng quan nhanh.
+
+/cases – Danh sách ca bệnh.
+
+/cases/new – Tạo ca mới (Tầng 1).
+
+/cases/:id – Xem chi tiết 1 ca (Tầng 2–3–4).
+
+/library – Thư viện ca + thống kê (Tầng 5).
+
+/chat – Chatbot 2 chiều (Tầng 6).
+
+5. Tầng 1 – Tạo & chuẩn hóa dữ liệu ca bệnh
+5.1. Form tạo ca mới /cases/new
+
+Form gồm các nhóm:
+
+Thông tin bệnh nhân:
+
+Họ và tên (text)
+
+Tuổi (number)
+
+Giới tính (select: Nam / Nữ / Khác)
+
+Cân nặng (kg, number)
+
+Chiều cao (cm, number)
+
+Chẩn đoán & tiền sử:
+
+Chẩn đoán chính (textarea)
+
+Bệnh kèm theo (textarea hoặc tag list)
+
+Tiền sử bệnh (textarea)
+
+Xét nghiệm & cận lâm sàng:
+
+Ô cho phép thêm nhiều dòng xét nghiệm:
+
+Tên xét nghiệm
+
+Giá trị
+
+Đơn vị
+
+Ngày/giờ (optional)
+
+Thuốc đang dùng:
+
+Ô textarea lớn: “Dán đơn thuốc hoặc danh sách thuốc đang dùng” (dạng raw).
+
+Button “Chuẩn hóa danh sách thuốc (AI)”:
+
+Khi bấm:
+
+Gửi text này lên backend → DeepSeek parse thành danh sách chuẩn:
+
+Tên hoạt chất / tên thuốc
+
+Hàm lượng
+
+Liều mỗi lần
+
+Số lần/ngày
+
+Đường dùng (uống, IV…)
+
+Render lại thành bảng editable để user sửa thủ công nếu cần.
+
+5.2. Upload file PDF/Word cận lâm sàng
+
+Trong trang /cases/new, thêm khối:
+
+“Upload phiếu khám / cận lâm sàng (PDF/Word)”
+
+Input chọn file, chấp nhận:
+
+.pdf
+
+.doc / .docx
+
+(tuỳ chọn) ảnh .jpg, .png nếu bạn muốn xử lý.
+
+Nút: “AI đọc & điền form”.
+
+Luồng xử lý:
+
+Frontend upload file → gửi lên backend.
+
+Backend:
+
+Lưu tạm file.
+
+Đọc nội dung (nếu cần, tiền xử lý PDF/Word).
+
+Gọi DeepSeek với prompt (pseudo):
+
+Giải thích: đây là phiếu khám/xét nghiệm của bệnh nhân.
+
+Yêu cầu trích xuất đúng schema JSON:
+
+{
+  "ho_ten": "",
+  "tuoi": null,
+  "gioi_tinh": "",
+  "can_nang": null,
+  "chuan_doan_chinh": "",
+  "benh_kem_theo": [],
+  "tien_su": "",
+  "xet_nghiem": [
+    { "ten": "", "gia_tri": "", "don_vi": "", "thoi_gian": "" }
+  ],
+  "thuoc_dang_dung_raw": ""
+}
+
+
+Yêu cầu chỉ trả về JSON, không thêm giải thích.
+
+Backend parse JSON → trả về frontend.
+
+Frontend:
+
+Auto-fill các trường trong form tương ứng.
+
+User có thể sửa lại nếu cần.
+
+5.3. Chuẩn hóa dữ liệu (DeepSeek)
+
+Sau khi form đã được điền:
+
+Nút: “Chuẩn hóa dữ liệu bằng AI”.
+
+Backend gọi DeepSeek với input là JSON của ca bệnh (thông tin đã nhập) và yêu cầu:
+
+Chuẩn hóa:
+
+Đơn vị xét nghiệm (mg/dL ↔ µmol/L…).
+
+Cách ghi tên thuốc, liều, đường dùng.
+
+Tính:
+
+eGFR (mức lọc cầu thận) bằng công thức phù hợp (chỉ yêu cầu DeepSeek tính).
+
+Phân loại mức độ suy thận theo eGFR.
+
+Trả về:
+
+JSON dữ liệu đã chuẩn hóa (có trường egfr, muc_do_suy_than, …).
+
+1 đoạn text ngắn: “Điểm lưu ý lâm sàng chính của bệnh nhân này”.
+
+Lưu cả:
+
+Dữ liệu gốc (raw)
+
+Dữ liệu chuẩn hóa (normalized)
+
+Điểm lưu ý
+
+Vào DB (bảng cases, case_labs, case_medications…).
+
+6. Tầng 2 – Phân tích ca lâm sàng & hiệu chỉnh liều (DeepSeek)
+
+Trong trang chi tiết ca bệnh /cases/:id:
+
+Hiển thị:
+
+Thông tin BN (tên, tuổi, giới tính, cân nặng…)
+
+eGFR, mức độ suy thận (nếu đã có)
+
+Bệnh kèm theo, tiền sử
+
+Danh sách thuốc đã chuẩn hóa.
+
+Thêm nút:
+
+“Phân tích & hiệu chỉnh liều (AI – DeepSeek)”
+
+Luồng:
+
+Backend lấy dữ liệu chuẩn hóa của ca (thuốc + eGFR + bệnh nền…).
+
+Gọi DeepSeek với yêu cầu:
+
+Phân tích từng thuốc:
+
+Liều hiện tại có phù hợp không?
+
+Cần chỉnh liều theo eGFR/tuổi/bệnh kèm theo không?
+
+Có thuốc cần tránh/đổi?
+
+Kiểm tra tương tác:
+
+Thuốc – thuốc
+
+Thuốc – bệnh
+
+Trả về kết quả có cấu trúc, ví dụ:
+
+{
+  "tong_quan": "…",
+  "phan_tich_tung_thuoc": [
+    {
+      "ten": "",
+      "nhan_xet": "",
+      "de_xuat": ""
+    }
+  ],
+  "canh_bao_quan_trong": [
+    "..."
+  ],
+  "khuyen_cao_cu_the": "…"
+}
+
+
+Ghi chú trong nội dung:
+
+“Khuyến cáo mang tính tham khảo, cần đối chiếu guideline và quyết định cuối cùng thuộc về bác sĩ điều trị.”
+
+Lưu kết quả phân tích vào DB (bảng case_analysis).
+
+Hiển thị phần này trên UI dưới dạng các mục rõ ràng.
+
+7. Tầng 3 – Bằng chứng (Perplexity + Scite)
+
+Trên trang /cases/:id, thêm nút:
+
+“Tìm bằng chứng (Perplexity + Scite)”
+
+Luồng backend:
+
+Dựa trên:
+
+Chẩn đoán
+
+Thuốc quan trọng
+
+Kết quả phân tích của DeepSeek
+
+Tạo câu hỏi tiếng Anh gửi cho Perplexity, ví dụ:
+
+“Latest dosing recommendations for piperacillin/tazobactam in patients with chronic kidney disease and eGFR around 30 ml/min”
+
+Perplexity trả về:
+
+Danh sách guideline / review / article + link.
+
+Với 1 số bài quan trọng, gọi Scite:
+
+Kiểm tra loại nghiên cứu (RCT, cohort, meta-analysis, guideline).
+
+Trích số liệu: được trích dẫn bao nhiêu, có conflicting evidence không.
+
+Lưu vào DB bảng case_evidence, mỗi record gồm:
+
+Tiêu đề
+
+Tác giả (nếu có)
+
+Năm
+
+Loại tài liệu
+
+Link
+
+Nguồn (Perplexity + Scite)
+
+Tóm tắt ngắn (1–3 câu).
+
+Hiển thị ở UI:
+
+Danh sách “Bằng chứng tham khảo” cho ca bệnh.
+
+Link click mở tab mới.
+
+8. Tầng 4 – Tạo “Phiếu tư vấn thuốc chuẩn hóa” (DeepSeek)
+
+Ở /cases/:id, thêm nút:
+
+“Tạo phiếu tư vấn (AI)”
+
+Luồng:
+
+Backend gửi cho DeepSeek:
+
+Dữ liệu ca đã chuẩn hóa (tầng 1).
+
+Phân tích & khuyến cáo (tầng 2).
+
+Danh sách bằng chứng chính (tầng 3).
+
+Yêu cầu DeepSeek tạo nội dung tiếng Việt theo format:
+
+Thông tin bệnh nhân (ẩn bớt thông tin nhạy cảm nếu cần, ví dụ chỉ ghi tên viết tắt).
+
+Chẩn đoán và bối cảnh lâm sàng ngắn gọn.
+
+Vấn đề dược lâm sàng chính.
+
+Phân tích & khuyến cáo cho từng thuốc (có thể dạng danh sách/bảng).
+
+Bằng chứng tham khảo (liệt kê 3–5 nguồn chính).
+
+Ghi chú cuối:
+
+“Khuyến cáo mang tính tham khảo, cần đối chiếu guideline và quyết định cuối cùng thuộc về bác sĩ điều trị.”
+
+Trả về dạng markdown hoặc HTML đơn giản.
+
+Lưu vào DB bảng case_reports.
+
+Frontend:
+
+Hiển thị preview “Phiếu tư vấn”.
+
+Có nút “In” hoặc “Xuất PDF”.
+
+9. Tầng 5 – Thư viện case & phân tích xu hướng
+
+Route /library:
+
+Bảng danh sách ca đã tư vấn, gồm:
+
+Mã ca (ID)
+
+Họ tên BN (hoặc mã hoá)
+
+Khoa (nếu có)
+
+Chẩn đoán chính
+
+eGFR, mức suy thận
+
+Thuốc “trọng tâm” (ví dụ thuốc đang phải chỉnh liều)
+
+Người tạo (username)
+
+Ngày tạo
+
+Bộ lọc:
+
+Theo:
+
+Khoa
+
+Mức độ suy thận
+
+Thuốc (tìm ca có chứa thuốc X)
+
+Khoảng ngày.
+
+Thống kê:
+
+Các số liệu cơ bản, ví dụ:
+
+Số ca đã tư vấn theo tháng.
+
+Top thuốc hay phải chỉnh liều.
+
+Nhóm thuốc hay gặp tương tác.
+
+Có thể thêm nút:
+
+“Tóm tắt xu hướng bằng AI (DeepSeek)”
+
+Backend gửi dữ liệu thống kê dạng JSON → DeepSeek → nhận về 1 đoạn text:
+
+Tổng hợp xu hướng lâm sàng.
+
+Hiển thị đoạn text này phía trên hoặc bên cạnh biểu đồ.
+
+10. Tầng 6 – Chatbot 2 chiều “Trợ lý ảo Cửa Đông Care”
+
+Route /chat:
+
+Giao diện:
+
+Bên trái:
+
+Dropdown “Chọn ca bệnh” (Case ID) – có tùy chọn “Không (hỏi chung)”.
+
+Bên phải:
+
+Khung chat giống ChatGPT:
+
+Tin nhắn user
+
+Tin nhắn bot
+
+Ô nhập + nút gửi.
+
+Persona & System Prompt cho DeepSeek
+
+Khi khởi tạo chatbot, backend gửi system prompt cho DeepSeek:
+
+Bot tên: “Trợ lý ảo Cửa Đông Care”.
+
+Là trợ lý dược lâm sàng của Bệnh viện Đa khoa Cửa Đông, TP Vinh, Nghệ An.
+
+Phong cách:
+
+Xưng “em”, gọi người dùng là “anh/chị/bác sĩ/dược sĩ”.
+
+Trả lời ngắn gọn, súc tích, tập trung vào chuyên môn.
+
+Nhiệm vụ:
+
+Giải thích về thuốc, chỉnh liều, tương tác, cách theo dõi.
+
+Khi có Case ID, phải sử dụng dữ liệu ca đó làm bối cảnh chính.
+
+Có thể gợi ý từ khóa để người dùng tìm guideline (hoặc tự gọi module Perplexity + Scite nếu được lập trình).
+
+Luôn nhắc:
+
+Đây là gợi ý mang tính hỗ trợ, quyết định cuối cùng thuộc về bác sĩ điều trị.
+
+Luồng xử lý mỗi tin nhắn
+
+Khi user gửi message:
+
+Backend lấy:
+
+Tin nhắn
+
+Context ca (nếu chọn Case ID)
+
+System prompt trên
+
+Gửi cho DeepSeek → trả về câu trả lời.
+
+Optional:
+
+Nếu user gõ dạng: “Cho em bằng chứng về… / guideline về…”, backend có thể:
+
+Gọi thêm Perplexity + Scite.
+
+Gửi kết quả tóm tắt + link ở tin nhắn tiếp theo.
+
+Lưu log chat (user, bot, thời gian, case_id) vào DB.
+
+11. Hạn chế & nguyên tắc
+
+Chỉ dùng 3 AI: DeepSeek, Perplexity, Scite.
+
+API key:
+
+Lấy từ biến môi trường.
+
+Không để lộ trên frontend.
+
+Các request đến AI nên có:
+
+Xử lý lỗi nếu API thất bại (hiển thị thông báo thân thiện).
+
+Không cần system quá phức tạp về phân quyền; ưu tiên chạy được, ổn định
