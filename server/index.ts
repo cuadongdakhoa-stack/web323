@@ -4,6 +4,7 @@ import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
 
 const app = express();
+app.set('trust proxy', 1);
 
 declare module 'http' {
   interface IncomingMessage {
