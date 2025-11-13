@@ -179,37 +179,37 @@ function formatAnalysisToText(analysis: any): string {
   
   // Section 1: Đánh giá chức năng thận
   if (analysis.renalAssessment) {
-    sections.push(`**Đánh giá chức năng thận:**\n${analysis.renalAssessment}`);
+    sections.push(`Đánh giá chức năng thận:\n${analysis.renalAssessment}`);
   }
   
   // Section 2: Tương tác thuốc-thuốc
   if (analysis.drugDrugInteractions && analysis.drugDrugInteractions.length > 0) {
-    sections.push(`**Tương tác thuốc-thuốc:**\n${analysis.drugDrugInteractions.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Tương tác thuốc-thuốc:\n${analysis.drugDrugInteractions.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
   }
   
   // Section 3: Tương tác thuốc-bệnh
   if (analysis.drugDiseaseInteractions && analysis.drugDiseaseInteractions.length > 0) {
-    sections.push(`**Tương tác thuốc-bệnh:**\n${analysis.drugDiseaseInteractions.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Tương tác thuốc-bệnh:\n${analysis.drugDiseaseInteractions.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
   }
   
   // Section 4: Điều chỉnh liều
   if (analysis.doseAdjustments && analysis.doseAdjustments.length > 0) {
-    sections.push(`**Điều chỉnh liều:**\n${analysis.doseAdjustments.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Điều chỉnh liều:\n${analysis.doseAdjustments.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
   }
   
   // Section 5: Theo dõi
   if (analysis.monitoring && analysis.monitoring.length > 0) {
-    sections.push(`**Theo dõi:**\n${analysis.monitoring.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Theo dõi:\n${analysis.monitoring.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
   }
   
   // Section 6: Cảnh báo
   if (analysis.warnings && analysis.warnings.length > 0) {
-    sections.push(`**Cảnh báo:**\n${analysis.warnings.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
+    sections.push(`Cảnh báo:\n${analysis.warnings.map((item: string, idx: number) => `${idx + 1}. ${item}`).join('\n')}`);
   }
   
   // Section 7: Thông tin bổ sung
   if (analysis.additionalInfo) {
-    sections.push(`**Thông tin bổ sung:**\n${analysis.additionalInfo}`);
+    sections.push(`Thông tin bổ sung:\n${analysis.additionalInfo}`);
   }
   
   return sections.join('\n\n');

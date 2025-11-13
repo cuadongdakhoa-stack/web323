@@ -425,6 +425,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete("/api/analyses/:id", requireAuth, async (req, res) => {
+    try {
+      const analysis = await db.select().from(analyses).where(eq(analyses.id, req.params.id)).limit(1);
+      if (!analysis[0]) {
+        return res.status(404).json({ message: "Không tìm thấy phân tích" });
+      }
+      
+      const caseData = await storage.getCase(analysis[0].caseId);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+      }
+      
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền xóa phân tích của ca bệnh này" });
+      }
+      
+      await db.delete(analyses).where(eq(analyses.id, req.params.id));
+      res.json({ message: "Đã xóa phân tích" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
   app.get("/api/cases/:id/evidence", requireAuth, async (req, res) => {
     try {
       const caseData = await storage.getCase(req.params.id);

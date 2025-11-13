@@ -168,6 +168,28 @@ export default function CaseDetail() {
     },
   });
 
+  const deleteAnalysisMutation = useMutation({
+    mutationFn: async (analysisId: string) => {
+      return await apiRequest(`/api/analyses/${analysisId}`, {
+        method: "DELETE",
+      });
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", id, "analyses"] });
+      toast({
+        title: "Đã xóa",
+        description: "Phân tích đã được xóa",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Lỗi xóa phân tích",
+        description: error.message || "Không thể xóa phân tích",
+      });
+    },
+  });
+
   const reportForm = useForm<z.infer<typeof reportFormSchema>>({
     resolver: zodResolver(reportFormSchema),
     defaultValues: {
@@ -454,9 +476,20 @@ export default function CaseDetail() {
                                 {new Date(analysis.createdAt).toLocaleString("vi-VN")}
                               </span>
                             </div>
-                            <Badge variant={analysis.status === "completed" ? "default" : "destructive"}>
-                              {analysis.status === "completed" ? "Hoàn thành" : "Thất bại"}
-                            </Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={analysis.status === "completed" ? "default" : "destructive"}>
+                                {analysis.status === "completed" ? "Hoàn thành" : "Thất bại"}
+                              </Badge>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteAnalysisMutation.mutate(analysis.id)}
+                                disabled={deleteAnalysisMutation.isPending}
+                                data-testid={`button-delete-analysis-${analysis.id}`}
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
                           </div>
                           
                           {analysis.status === "completed" && analysis.result ? (
