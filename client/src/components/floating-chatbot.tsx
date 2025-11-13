@@ -30,10 +30,11 @@ export function FloatingChatbot() {
 
   const sendMessageMutation = useMutation({
     mutationFn: async (message: string) => {
-      return apiRequest("/api/chat", {
+      const response = await apiRequest("/api/chat", {
         method: "POST",
         body: JSON.stringify({ message }),
       });
+      return response.json();
     },
     onSuccess: (serverResponse: ChatMessage) => {
       queryClient.setQueryData<ChatMessage[]>(["/api/chat"], (old) => {

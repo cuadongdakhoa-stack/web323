@@ -61,7 +61,8 @@ Hệ thống trợ lý dược lâm sàng chuyên nghiệp cho bệnh viện Vi�
 - **Provider**: OpenRouter API
 - **Models**: 
   - DeepSeek Chat (deepseek/deepseek-chat) - Phân tích lâm sàng
-  - Perplexity (perplexity/llama-3.1-sonar-large-128k-online) - Tìm kiếm bằng chứng
+  - Perplexity Sonar Pro (perplexity/sonar-pro) - Tìm kiếm bằng chứng y khoa
+- **Encoding**: UTF-8 charset for Vietnamese characters
 
 ### Pipeline kiểm chứng AI
 ```
@@ -302,13 +303,16 @@ npx tsx server/seed.ts  # Seed 5 fixed users
 - [x] Case management (CRUD)
 - [x] Basic UI/UX
 - [x] Database schema
-- [ ] AI analysis integration
-- [ ] PDF/Word upload
-- [ ] Consultation report generation
+- [x] Floating AI chatbot assistant
+- [x] Consultation report generation
+- [x] OpenRouter API integration (DeepSeek + Perplexity)
+- [ ] AI analysis integration (pipeline)
+- [ ] PDF/Word upload with auto-extraction
 
 ### Phase 2: Advanced Features
-- [ ] Real-time chat with AI
-- [ ] Advanced search & filters
+- [ ] Complete AI analysis pipeline (DeepSeek → Perplexity → DeepSeek)
+- [ ] Evidence search and verification
+- [ ] Advanced search & filters (Library page)
 - [ ] Statistics & analytics
 - [ ] Export to Excel/PDF
 - [ ] Mobile responsive improvements
@@ -358,6 +362,12 @@ npx tsx server/seed.ts  # Seed 5 fixed users
 - Verify OPENROUTER_API_KEY is set
 - Check API quota and billing
 - Review error logs for specific issues
+- Ensure UTF-8 encoding header is set for Vietnamese text
+
+**Chatbot messages not displaying**
+- Fixed: API response must be parsed with `.json()` in mutation
+- Check that Content-Type includes `charset=utf-8`
+- Verify Perplexity model is `perplexity/sonar-pro` (updated from deprecated model)
 
 ## Contributing
 
