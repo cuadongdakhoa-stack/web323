@@ -65,7 +65,6 @@ export default function Login() {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin_cd, duoc1, duoc2, bsnoi, bsicu"
                 required
               />
             </div>
