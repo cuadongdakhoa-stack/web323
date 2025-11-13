@@ -117,7 +117,7 @@ export function FloatingChatbot() {
                       <div key={msg.id} className="space-y-2">
                         <div className="flex justify-end">
                           <div 
-                            className="bg-primary text-primary-foreground rounded-lg px-4 py-2 max-w-[80%]"
+                            className="bg-primary text-primary-foreground rounded-lg px-4 py-2 max-w-[80%] break-words"
                             data-testid={`message-user-${idx}`}
                           >
                             <p className="text-sm">{msg.message}</p>
@@ -125,7 +125,7 @@ export function FloatingChatbot() {
                         </div>
                         <div className="flex justify-start">
                           <div 
-                            className="bg-muted rounded-lg px-4 py-2 max-w-[80%]"
+                            className="bg-muted rounded-lg px-4 py-2 max-w-[80%] break-words"
                             data-testid={`message-assistant-${idx}`}
                           >
                             <p className="text-sm whitespace-pre-wrap">{msg.response}</p>
@@ -150,7 +150,7 @@ export function FloatingChatbot() {
                   <div className="mt-4 space-y-2">
                     <div className="flex justify-end">
                       <div 
-                        className="bg-primary text-primary-foreground rounded-lg px-4 py-2 max-w-[80%]"
+                        className="bg-primary text-primary-foreground rounded-lg px-4 py-2 max-w-[80%] break-words"
                         data-testid="message-user-pending"
                       >
                         <p className="text-sm">{sendMessageMutation.variables}</p>
@@ -158,7 +158,7 @@ export function FloatingChatbot() {
                     </div>
                     <div className="flex justify-start">
                       <div 
-                        className="bg-muted rounded-lg px-4 py-2"
+                        className="bg-muted rounded-lg px-4 py-2 break-words"
                         data-testid="message-assistant-loading"
                       >
                         <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
