@@ -975,7 +975,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const pdfBuffer = await generatePDF(report, caseData);
       
-      const fileName = `phieu-tu-van-${caseData.name.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`;
+      const patientName = (caseData.name || 'benh-nhan').replace(/\s+/g, '-');
+      const fileName = `phieu-tu-van-${patientName}-${new Date().toISOString().split('T')[0]}.pdf`;
       
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
@@ -1000,7 +1001,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const docxBuffer = await generateDOCX(report, caseData);
       
-      const fileName = `phieu-tu-van-${caseData.name.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.docx`;
+      const patientName = (caseData.name || 'benh-nhan').replace(/\s+/g, '-');
+      const fileName = `phieu-tu-van-${patientName}-${new Date().toISOString().split('T')[0]}.docx`;
       
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
       res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);

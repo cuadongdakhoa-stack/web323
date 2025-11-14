@@ -1,8 +1,13 @@
 import PDFDocument from 'pdfkit';
 import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import type { ConsultationReport } from '@shared/schema';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
-export function generatePDF(report: ConsultationReport, patientData: any): Buffer {
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export function generatePDF(report: ConsultationReport, patientData: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     try {
       const chunks: Buffer[] = [];
@@ -16,13 +21,17 @@ export function generatePDF(report: ConsultationReport, patientData: any): Buffe
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      doc.font('Helvetica');
+      const fontPath = path.join(__dirname, 'fonts');
+      doc.registerFont('NotoSans', path.join(fontPath, 'NotoSans-Regular.ttf'));
+      doc.registerFont('NotoSans-Bold', path.join(fontPath, 'NotoSans-Bold.ttf'));
+      doc.font('NotoSans');
 
       const content = report.reportContent as any;
       const leftMargin = 70;
       let y = 50;
 
-      doc.fontSize(18).text('PHIẾU TƯ VẤN SỬ DỤNG THUỐC', { align: 'center' });
+      doc.font('NotoSans-Bold').fontSize(18).text('PHIẾU TƯ VẤN SỬ DỤNG THUỐC', { align: 'center' });
+      doc.font('NotoSans');
       y += 40;
 
       doc.fontSize(12);
@@ -38,9 +47,9 @@ export function generatePDF(report: ConsultationReport, patientData: any): Buffe
       }
 
       if (patientData) {
-        doc.fontSize(14).text('THÔNG TIN BỆNH NHÂN', leftMargin, y, { underline: true });
+        doc.font('NotoSans-Bold').fontSize(14).text('THÔNG TIN BỆNH NHÂN', leftMargin, y, { underline: true });
+        doc.font('NotoSans').fontSize(11);
         y += 25;
-        doc.fontSize(11);
         
         if (patientData.name) {
           doc.text(`Họ và tên: ${patientData.name}`, leftMargin, y);
@@ -67,16 +76,17 @@ export function generatePDF(report: ConsultationReport, patientData: any): Buffe
       }
 
       if (content.clinicalAssessment) {
-        doc.fontSize(14).text('ĐÁNH GIÁ LÂM SÀNG', leftMargin, y, { underline: true });
+        doc.font('NotoSans-Bold').fontSize(14).text('ĐÁNH GIÁ LÂM SÀNG', leftMargin, y, { underline: true });
+        doc.font('NotoSans').fontSize(11);
         y += 25;
-        doc.fontSize(11).text(content.clinicalAssessment, leftMargin, y, { align: 'justify', width: 480 });
+        doc.text(content.clinicalAssessment, leftMargin, y, { align: 'justify', width: 480 });
         y = doc.y + 20;
       }
 
       if (content.recommendations?.length > 0) {
-        doc.fontSize(14).text('KHUYẾN NGHỊ', leftMargin, y, { underline: true });
+        doc.font('NotoSans-Bold').fontSize(14).text('KHUYẾN NGHỊ', leftMargin, y, { underline: true });
+        doc.font('NotoSans').fontSize(11);
         y += 25;
-        doc.fontSize(11);
         content.recommendations.forEach((rec: string, idx: number) => {
           doc.text(`${idx + 1}. ${rec}`, leftMargin, y, { align: 'justify', width: 480 });
           y = doc.y + 10;
@@ -85,9 +95,9 @@ export function generatePDF(report: ConsultationReport, patientData: any): Buffe
       }
 
       if (content.monitoring?.length > 0) {
-        doc.fontSize(14).text('THEO DÕI', leftMargin, y, { underline: true });
+        doc.font('NotoSans-Bold').fontSize(14).text('THEO DÕI', leftMargin, y, { underline: true });
+        doc.font('NotoSans').fontSize(11);
         y += 25;
-        doc.fontSize(11);
         content.monitoring.forEach((item: string, idx: number) => {
           doc.text(`${idx + 1}. ${item}`, leftMargin, y, { align: 'justify', width: 480 });
           y = doc.y + 10;
@@ -96,9 +106,9 @@ export function generatePDF(report: ConsultationReport, patientData: any): Buffe
       }
 
       if (content.patientEducation?.length > 0) {
-        doc.fontSize(14).text('HƯỚNG DẪN BỆNH NHÂN', leftMargin, y, { underline: true });
+        doc.font('NotoSans-Bold').fontSize(14).text('HƯỚNG DẪN BỆNH NHÂN', leftMargin, y, { underline: true });
+        doc.font('NotoSans').fontSize(11);
         y += 25;
-        doc.fontSize(11);
         content.patientEducation.forEach((item: string, idx: number) => {
           doc.text(`${idx + 1}. ${item}`, leftMargin, y, { align: 'justify', width: 480 });
           y = doc.y + 10;
@@ -107,9 +117,10 @@ export function generatePDF(report: ConsultationReport, patientData: any): Buffe
       }
 
       if (content.followUp) {
-        doc.fontSize(14).text('KẾ HOẠCH TÁI KHÁM', leftMargin, y, { underline: true });
+        doc.font('NotoSans-Bold').fontSize(14).text('KẾ HOẠCH TÁI KHÁM', leftMargin, y, { underline: true });
+        doc.font('NotoSans').fontSize(11);
         y += 25;
-        doc.fontSize(11).text(content.followUp, leftMargin, y, { align: 'justify', width: 480 });
+        doc.text(content.followUp, leftMargin, y, { align: 'justify', width: 480 });
         y = doc.y + 20;
       }
 
