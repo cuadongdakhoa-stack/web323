@@ -10,7 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Save, Plus, Trash2, FileText, Loader2, X } from "lucide-react";
+import { ArrowLeft, Upload, Save, Plus, Trash2, FileText, Loader2, X, Calendar } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -391,6 +391,41 @@ export default function NewCase() {
       return;
     }
     
+    if (!currentMed.usageStartDate) {
+      toast({
+        variant: "destructive",
+        title: "Thiếu thông tin",
+        description: "Vui lòng nhập ngày bắt đầu dùng thuốc để kiểm tra tương tác chính xác",
+      });
+      return;
+    }
+    
+    if (currentMed.usageStartDate && formData.admissionDate) {
+      const startDate = new Date(currentMed.usageStartDate);
+      const admissionDate = new Date(formData.admissionDate);
+      if (startDate < admissionDate) {
+        toast({
+          variant: "destructive",
+          title: "Ngày không hợp lệ",
+          description: "Ngày bắt đầu dùng thuốc không thể trước ngày nhập viện",
+        });
+        return;
+      }
+    }
+    
+    if (currentMed.usageEndDate && currentMed.usageStartDate) {
+      const endDate = new Date(currentMed.usageEndDate);
+      const startDate = new Date(currentMed.usageStartDate);
+      if (endDate < startDate) {
+        toast({
+          variant: "destructive",
+          title: "Ngày không hợp lệ",
+          description: "Ngày kết thúc phải sau hoặc bằng ngày bắt đầu",
+        });
+        return;
+      }
+    }
+    
     const newMed = {
       ...currentMed,
       id: Date.now().toString(),
@@ -702,37 +737,63 @@ export default function NewCase() {
               </CardHeader>
               <CardContent>
                 {medications.length > 0 && (
-                  <Table className="mb-4">
-                    <TableHeader>
-                      <TableRow>
-                        <TableHead>Tên thuốc</TableHead>
-                        <TableHead>Liều dùng</TableHead>
-                        <TableHead>Tần suất</TableHead>
-                        <TableHead>Đường dùng</TableHead>
-                        <TableHead></TableHead>
-                      </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                      {medications.map((med) => (
-                        <TableRow key={med.id} data-testid={`row-medication-${med.id}`}>
-                          <TableCell className="font-medium">{med.drugName}</TableCell>
-                          <TableCell>{med.prescribedDose}</TableCell>
-                          <TableCell>{med.prescribedFrequency}</TableCell>
-                          <TableCell>{med.prescribedRoute}</TableCell>
-                          <TableCell>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeMedication(med.id)}
-                              data-testid={`button-remove-${med.id}`}
-                            >
-                              <Trash2 className="w-4 h-4 text-destructive" />
-                            </Button>
-                          </TableCell>
+                  <div className="mb-4 overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Tên thuốc</TableHead>
+                          <TableHead>Liều dùng</TableHead>
+                          <TableHead>Tần suất</TableHead>
+                          <TableHead>Đường dùng</TableHead>
+                          <TableHead className="min-w-[200px]">Thời gian dùng</TableHead>
+                          <TableHead></TableHead>
                         </TableRow>
-                      ))}
-                    </TableBody>
-                  </Table>
+                      </TableHeader>
+                      <TableBody>
+                        {medications.map((med) => (
+                          <TableRow key={med.id} data-testid={`row-medication-${med.id}`}>
+                            <TableCell className="font-medium">{med.drugName}</TableCell>
+                            <TableCell>{med.prescribedDose}</TableCell>
+                            <TableCell>{med.prescribedFrequency}</TableCell>
+                            <TableCell>{med.prescribedRoute}</TableCell>
+                            <TableCell className="text-sm">
+                              {med.usageStartDate || med.usageEndDate ? (
+                                <div className="space-y-1">
+                                  {med.usageStartDate && (
+                                    <div className="flex items-center gap-1 text-muted-foreground">
+                                      <Calendar className="w-3 h-3" />
+                                      <span>Từ: {new Date(med.usageStartDate).toLocaleDateString('vi-VN')}</span>
+                                    </div>
+                                  )}
+                                  {med.usageEndDate && (
+                                    <div className="flex items-center gap-1 text-muted-foreground">
+                                      <Calendar className="w-3 h-3" />
+                                      <span>Đến: {new Date(med.usageEndDate).toLocaleDateString('vi-VN')}</span>
+                                    </div>
+                                  )}
+                                  {med.usageStartDate && !med.usageEndDate && (
+                                    <span className="text-xs text-primary">(Đang dùng)</span>
+                                  )}
+                                </div>
+                              ) : (
+                                <span className="text-xs text-muted-foreground italic">Chưa nhập ngày</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeMedication(med.id)}
+                                data-testid={`button-remove-${med.id}`}
+                              >
+                                <Trash2 className="w-4 h-4 text-destructive" />
+                              </Button>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
                 )}
 
                 {showMedForm ? (
@@ -803,26 +864,46 @@ export default function NewCase() {
                       />
                     </div>
 
-                    <div className="grid grid-cols-2 gap-4">
-                      <div className="space-y-2">
-                        <Label htmlFor="usageStartDate">Ngày bắt đầu dùng</Label>
-                        <Input
-                          id="usageStartDate"
-                          data-testid="input-usage-start-date"
-                          type="date"
-                          value={currentMed.usageStartDate}
-                          onChange={(e) => handleMedChange("usageStartDate", e.target.value)}
-                        />
+                    <div className="p-3 bg-primary/5 border border-primary/20 rounded-md space-y-3">
+                      <div className="flex items-center gap-2 text-sm font-medium text-primary">
+                        <Calendar className="w-4 h-4" />
+                        <span>Thời gian sử dụng thuốc</span>
                       </div>
-                      <div className="space-y-2">
-                        <Label htmlFor="usageEndDate">Ngày kết thúc dùng</Label>
-                        <Input
-                          id="usageEndDate"
-                          data-testid="input-usage-end-date"
-                          type="date"
-                          value={currentMed.usageEndDate}
-                          onChange={(e) => handleMedChange("usageEndDate", e.target.value)}
-                        />
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="usageStartDate" className="text-sm">
+                            Ngày bắt đầu dùng <span className="text-primary">*</span>
+                          </Label>
+                          <Input
+                            id="usageStartDate"
+                            data-testid="input-usage-start-date"
+                            type="date"
+                            value={currentMed.usageStartDate}
+                            onChange={(e) => handleMedChange("usageStartDate", e.target.value)}
+                            min={formData.admissionDate}
+                            className="border-primary/30"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Bắt buộc để kiểm tra tương tác thuốc chính xác
+                          </p>
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="usageEndDate" className="text-sm">
+                            Ngày kết thúc dùng
+                          </Label>
+                          <Input
+                            id="usageEndDate"
+                            data-testid="input-usage-end-date"
+                            type="date"
+                            value={currentMed.usageEndDate}
+                            onChange={(e) => handleMedChange("usageEndDate", e.target.value)}
+                            min={currentMed.usageStartDate || formData.admissionDate}
+                            className="border-primary/30"
+                          />
+                          <p className="text-xs text-muted-foreground">
+                            Để trống nếu thuốc đang dùng
+                          </p>
+                        </div>
                       </div>
                     </div>
 
