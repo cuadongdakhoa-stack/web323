@@ -1,21 +1,6 @@
 import PDFDocument from 'pdfkit';
-import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType, UnderlineType } from 'docx';
+import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } from 'docx';
 import type { ConsultationReport } from '@shared/schema';
-import path from 'path';
-import fs from 'fs';
-
-const FONT_PATH = path.join(process.cwd(), 'server', 'fonts');
-
-function registerVietnameseFont(doc: PDFKit.PDFDocument) {
-  const regularFont = path.join(FONT_PATH, 'NotoSans-Regular.ttf');
-  const boldFont = path.join(FONT_PATH, 'NotoSans-Bold.ttf');
-  
-  if (fs.existsSync(regularFont)) {
-    doc.registerFont('NotoSans', regularFont);
-    doc.registerFont('NotoSans-Bold', boldFont);
-    doc.font('NotoSans');
-  }
-}
 
 export function generatePDF(report: ConsultationReport, patientData: any): Buffer {
   return new Promise((resolve, reject) => {
@@ -31,7 +16,7 @@ export function generatePDF(report: ConsultationReport, patientData: any): Buffe
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      registerVietnameseFont(doc);
+      doc.font('Helvetica');
 
       const content = report.reportContent as any;
       const leftMargin = 70;

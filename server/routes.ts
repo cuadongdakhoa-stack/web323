@@ -30,6 +30,7 @@ import {
   verifyWithPipeline,
   suggestDocuments
 } from "./openrouter";
+import { generatePDF, generateDOCX } from "./reportExport";
 import multer from "multer";
 import mammoth from "mammoth";
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
@@ -957,6 +958,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(report);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cases/:id/consultation-report/export/pdf", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getConsultationReportByCase(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Chưa có phiếu tư vấn" });
+      }
+
+      const caseData = await storage.getCase(req.params.id);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+      }
+
+      const pdfBuffer = await generatePDF(report, caseData);
+      
+      const fileName = `phieu-tu-van-${caseData.name.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.pdf`;
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error("PDF export error:", error);
+      res.status(500).json({ message: error.message || "Lỗi khi xuất PDF" });
+    }
+  });
+
+  app.get("/api/cases/:id/consultation-report/export/docx", requireAuth, async (req, res) => {
+    try {
+      const report = await storage.getConsultationReportByCase(req.params.id);
+      if (!report) {
+        return res.status(404).json({ message: "Chưa có phiếu tư vấn" });
+      }
+
+      const caseData = await storage.getCase(req.params.id);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+      }
+
+      const docxBuffer = await generateDOCX(report, caseData);
+      
+      const fileName = `phieu-tu-van-${caseData.name.replace(/\s+/g, '-')}-${new Date().toISOString().split('T')[0]}.docx`;
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileName)}"`);
+      res.send(docxBuffer);
+    } catch (error: any) {
+      console.error("DOCX export error:", error);
+      res.status(500).json({ message: error.message || "Lỗi khi xuất DOCX" });
     }
   });
 
