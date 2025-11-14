@@ -164,35 +164,73 @@ export default function NewCase() {
           patientGender: data.patientGender || prev.patientGender,
           patientWeight: data.patientWeight?.toString() || prev.patientWeight,
           patientHeight: data.patientHeight?.toString() || prev.patientHeight,
-          diagnosisMain: data.diagnosis || prev.diagnosisMain,
+          diagnosisMain: data.diagnosisMain || data.diagnosis || prev.diagnosisMain,
+          diagnosisMainIcd: data.icdCodes?.main || prev.diagnosisMainIcd,
           medicalHistory: data.medicalHistory || prev.medicalHistory,
           allergies: data.allergies || prev.allergies,
         }));
+        
+        if (data.diagnosisSecondary && Array.isArray(data.diagnosisSecondary) && data.diagnosisSecondary.length > 0) {
+          const newSecondaryDiagnoses = data.diagnosisSecondary.map((text: string, idx: number) => ({
+            id: `extracted-secondary-${Date.now()}-${idx}`,
+            text: text,
+            icd: data.icdCodes?.secondary?.[idx] || "",
+          }));
+          setSecondaryDiagnoses(prev => [...prev, ...newSecondaryDiagnoses]);
+        }
 
         if (data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
           setMedications(prev => {
             const seenMedications = new Set<string>(
-              prev.map(m => m.drugName.trim().toLowerCase())
+              prev.map(m => `${m.drugName.trim().toLowerCase()}_${m.usageStartDate || ''}_${m.usageEndDate || ''}`)
             );
             
             const extractedMeds = data.medications
               .filter((med: any) => {
                 if (!med.drugName || !med.drugName.trim()) return false;
-                const medKey = med.drugName.trim().toLowerCase();
+                
+                const medKey = `${med.drugName.trim().toLowerCase()}_${med.usageStartDate || ''}_${med.usageEndDate || ''}`;
                 if (seenMedications.has(medKey)) return false;
                 seenMedications.add(medKey);
                 return true;
               })
-              .map((med: any, idx: number) => ({
-                id: `extracted-${Date.now()}-${idx}`,
-                drugName: med.drugName.trim(),
-                prescribedDose: med.dose || '',
-                prescribedFrequency: med.frequency || '',
-                prescribedRoute: med.route || 'Uống',
-                indication: '',
-                usageStartDate: '',
-                usageEndDate: '',
-              }));
+              .map((med: any) => {
+                let startDate = '';
+                let endDate = '';
+                
+                if (med.usageStartDate) {
+                  try {
+                    const start = new Date(med.usageStartDate);
+                    if (!isNaN(start.getTime())) {
+                      startDate = med.usageStartDate;
+                    }
+                  } catch (e) {}
+                }
+                
+                if (med.usageEndDate) {
+                  try {
+                    const end = new Date(med.usageEndDate);
+                    if (!isNaN(end.getTime())) {
+                      if (startDate && med.usageEndDate < startDate) {
+                        console.warn(`Medication ${med.drugName}: endDate < startDate, skipping endDate`);
+                      } else {
+                        endDate = med.usageEndDate;
+                      }
+                    }
+                  } catch (e) {}
+                }
+                
+                return {
+                  id: crypto.randomUUID(),
+                  drugName: med.drugName.trim(),
+                  prescribedDose: med.dose || '',
+                  prescribedFrequency: med.frequency || '',
+                  prescribedRoute: med.route || 'Uống',
+                  indication: '',
+                  usageStartDate: startDate,
+                  usageEndDate: endDate,
+                };
+              });
             
             totalMeds += extractedMeds.length;
             return [...prev, ...extractedMeds];

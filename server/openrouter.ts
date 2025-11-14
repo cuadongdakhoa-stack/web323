@@ -13,15 +13,30 @@ const extractedDataSchema = z.object({
   patientGender: z.string().nullable().optional(),
   patientWeight: z.number().nullable().optional(),
   patientHeight: z.number().nullable().optional(),
+  
+  // Chẩn đoán cấu trúc (ưu tiên)
+  diagnosisMain: z.string().nullable().optional(),
+  diagnosisSecondary: z.array(z.string()).nullable().optional(),
+  icdCodes: z.object({
+    main: z.string().nullable().optional(),
+    secondary: z.array(z.string()).nullable().optional(),
+  }).nullable().optional(),
+  
+  // Backward compatibility
   diagnosis: z.string().nullable().optional(),
+  
   medicalHistory: z.string().nullable().optional(),
   allergies: z.string().nullable().optional(),
   labResults: z.record(z.any()).nullable().optional(),
+  
+  // Medications với ngày tháng
   medications: z.array(z.object({
     drugName: z.string(),
     dose: z.string().nullable().optional(),
     frequency: z.string().nullable().optional(),
     route: z.string().nullable().optional(),
+    usageStartDate: z.string().nullable().optional(), // ISO date YYYY-MM-DD
+    usageEndDate: z.string().nullable().optional(),   // ISO date YYYY-MM-DD
   })).nullable().optional(),
 });
 
@@ -666,6 +681,16 @@ export async function extractDataFromDocument(
 
 ${textContent}
 
+QUAN TRỌNG: 
+- Tách CHẨN ĐOÁN CHÍNH và CHẨN ĐOÁN PHỤ (nếu có)
+- Tìm MÃ ICD-10 trong tài liệu (nếu có ghi rõ)
+- Trích xuất NGÀY BẮT ĐẦU và NGÀY KẾT THÚC dùng thuốc (nếu có)
+- Format ngày: YYYY-MM-DD
+
+VÍ DỤ:
+- Nếu ghi "Ngày 1-3/1/2024: Paracetamol" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
+- Nếu ghi "I10: Tăng huyết áp" → diagnosisMain: "Tăng huyết áp", icdCodes.main: "I10"
+
 JSON format (nếu thiếu thông tin thì để null):
 {
   "patientName": "string hoặc null",
@@ -673,16 +698,27 @@ JSON format (nếu thiếu thông tin thì để null):
   "patientGender": "string hoặc null",
   "patientWeight": number hoặc null,
   "patientHeight": number hoặc null,
-  "diagnosis": "string hoặc null",
+  
+  "diagnosisMain": "chẩn đoán bệnh chính",
+  "diagnosisSecondary": ["bệnh phụ 1", "bệnh phụ 2"] hoặc null,
+  "icdCodes": {
+    "main": "mã ICD chính (ví dụ: I10)",
+    "secondary": ["mã ICD phụ 1", "mã ICD phụ 2"]
+  } hoặc null,
+  
+  "diagnosis": "nếu không tách được thì ghi chung ở đây",
   "medicalHistory": "string hoặc null",
   "allergies": "string hoặc null",
   "labResults": {} hoặc null,
+  
   "medications": [
     {
       "drugName": "tên thuốc",
-      "dose": "liều lượng",
-      "frequency": "tần suất",
-      "route": "đường dùng"
+      "dose": "liều lượng hoặc null",
+      "frequency": "tần suất hoặc null",
+      "route": "đường dùng hoặc null",
+      "usageStartDate": "YYYY-MM-DD hoặc null",
+      "usageEndDate": "YYYY-MM-DD hoặc null"
     }
   ] hoặc null
 }

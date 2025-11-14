@@ -397,6 +397,8 @@ export default function CaseDetail() {
                       <TableHead>Liều dùng</TableHead>
                       <TableHead>Tần suất</TableHead>
                       <TableHead>Đường dùng</TableHead>
+                      <TableHead>Từ ngày</TableHead>
+                      <TableHead>Đến ngày</TableHead>
                       <TableHead>Chỉ định</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -412,6 +414,24 @@ export default function CaseDetail() {
                         </TableCell>
                         <TableCell>{med.adjustedFrequency || med.prescribedFrequency}</TableCell>
                         <TableCell>{med.adjustedRoute || med.prescribedRoute}</TableCell>
+                        <TableCell>
+                          {med.usageStartDate ? (
+                            <span className="text-sm text-nowrap">
+                              {new Date(med.usageStartDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          {med.usageEndDate ? (
+                            <span className="text-sm text-nowrap">
+                              {new Date(med.usageEndDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                            </span>
+                          ) : (
+                            <span className="text-sm text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
                         <TableCell className="max-w-xs truncate">{med.indication || "-"}</TableCell>
                       </TableRow>
                     ))}
