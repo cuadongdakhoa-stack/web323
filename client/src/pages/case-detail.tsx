@@ -522,11 +522,118 @@ export default function CaseDetail() {
                           </div>
                           
                           {analysis.status === "completed" && analysis.result ? (
-                            <AlertDescription className="whitespace-pre-wrap text-sm">
-                              {typeof analysis.result === 'string' 
-                                ? analysis.result 
-                                : analysis.result.finalAnalysis || JSON.stringify(analysis.result, null, 2)}
-                            </AlertDescription>
+                            <div className="space-y-4">
+                              {/* Normalize result to object (handle string or object) */}
+                              {(() => {
+                                const resultObj = typeof analysis.result === 'string' 
+                                  ? null  // String result → no structured data
+                                  : analysis.result;  // Object result → use it
+                                
+                                return resultObj?.structuredAnalysis ? (
+                                <div className="space-y-3">
+                                  {/* Renal Assessment */}
+                                  {resultObj.structuredAnalysis.renalAssessment && (
+                                    <div>
+                                      <h4 className="font-semibold text-sm mb-1" data-testid="heading-renal-assessment">Đánh giá chức năng thận:</h4>
+                                      <p className="text-sm text-muted-foreground">{resultObj.structuredAnalysis.renalAssessment}</p>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Drug-Drug Interactions (Grouped by Timeline) */}
+                                  {resultObj.structuredAnalysis.drugDrugInteractionGroups && resultObj.structuredAnalysis.drugDrugInteractionGroups.length > 0 ? (
+                                    <div className="space-y-2">
+                                      {resultObj.structuredAnalysis.drugDrugInteractionGroups.map((group: any, idx: number) => (
+                                        <div key={idx} className="border-l-2 border-primary pl-3">
+                                          <h4 className="font-semibold text-sm mb-1" data-testid={`heading-interactions-group-${idx}`}>
+                                            Tương tác thuốc ({group.rangeLabel}):
+                                          </h4>
+                                          <ul className="list-disc list-inside space-y-0.5">
+                                            {group.interactions.map((interaction: string, iIdx: number) => (
+                                              <li key={iIdx} className="text-sm text-muted-foreground" data-testid={`interaction-${idx}-${iIdx}`}>
+                                                {interaction}
+                                              </li>
+                                            ))}
+                                          </ul>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : resultObj.structuredAnalysis.drugDrugInteractions && resultObj.structuredAnalysis.drugDrugInteractions.length > 0 ? (
+                                    <div>
+                                      <h4 className="font-semibold text-sm mb-1" data-testid="heading-drug-interactions">Tương tác thuốc-thuốc:</h4>
+                                      <ul className="list-disc list-inside space-y-0.5">
+                                        {resultObj.structuredAnalysis.drugDrugInteractions.map((interaction: string, idx: number) => (
+                                          <li key={idx} className="text-sm text-muted-foreground" data-testid={`flat-interaction-${idx}`}>{interaction}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  ) : null}
+                                  
+                                  {/* Drug-Disease Interactions */}
+                                  {resultObj.structuredAnalysis.drugDiseaseInteractions && resultObj.structuredAnalysis.drugDiseaseInteractions.length > 0 && (
+                                    <div>
+                                      <h4 className="font-semibold text-sm mb-1" data-testid="heading-drug-disease-interactions">Tương tác thuốc-bệnh:</h4>
+                                      <ul className="list-disc list-inside space-y-0.5">
+                                        {resultObj.structuredAnalysis.drugDiseaseInteractions.map((interaction: string, idx: number) => (
+                                          <li key={idx} className="text-sm text-muted-foreground" data-testid={`disease-interaction-${idx}`}>{interaction}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Dose Adjustments */}
+                                  {resultObj.structuredAnalysis.doseAdjustments && resultObj.structuredAnalysis.doseAdjustments.length > 0 && (
+                                    <div>
+                                      <h4 className="font-semibold text-sm mb-1" data-testid="heading-dose-adjustments">Điều chỉnh liều:</h4>
+                                      <ul className="list-disc list-inside space-y-0.5">
+                                        {resultObj.structuredAnalysis.doseAdjustments.map((adjustment: string, idx: number) => (
+                                          <li key={idx} className="text-sm text-muted-foreground" data-testid={`dose-adjustment-${idx}`}>{adjustment}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Monitoring */}
+                                  {resultObj.structuredAnalysis.monitoring && resultObj.structuredAnalysis.monitoring.length > 0 && (
+                                    <div>
+                                      <h4 className="font-semibold text-sm mb-1" data-testid="heading-monitoring">Theo dõi:</h4>
+                                      <ul className="list-disc list-inside space-y-0.5">
+                                        {resultObj.structuredAnalysis.monitoring.map((item: string, idx: number) => (
+                                          <li key={idx} className="text-sm text-muted-foreground" data-testid={`monitoring-${idx}`}>{item}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Warnings */}
+                                  {resultObj.structuredAnalysis.warnings && resultObj.structuredAnalysis.warnings.length > 0 && (
+                                    <div>
+                                      <h4 className="font-semibold text-sm mb-1 text-destructive" data-testid="heading-warnings">Cảnh báo:</h4>
+                                      <ul className="list-disc list-inside space-y-0.5">
+                                        {resultObj.structuredAnalysis.warnings.map((warning: string, idx: number) => (
+                                          <li key={idx} className="text-sm text-destructive" data-testid={`warning-${idx}`}>{warning}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Additional Info */}
+                                  {resultObj.structuredAnalysis.additionalInfo && (
+                                    <div>
+                                      <h4 className="font-semibold text-sm mb-1" data-testid="heading-additional-info">Thông tin bổ sung:</h4>
+                                      <p className="text-sm text-muted-foreground">{resultObj.structuredAnalysis.additionalInfo}</p>
+                                    </div>
+                                  )}
+                                </div>
+                                ) : (
+                                /* Fallback to text display for legacy data */
+                                <AlertDescription className="whitespace-pre-wrap text-sm" data-testid="analysis-text-fallback">
+                                  {typeof analysis.result === 'string' 
+                                    ? analysis.result 
+                                    : analysis.result.finalAnalysis || JSON.stringify(analysis.result, null, 2)}
+                                </AlertDescription>
+                                );
+                              })()}
+                            </div>
                           ) : analysis.error ? (
                             <AlertDescription className="text-sm text-destructive">
                               {analysis.error}

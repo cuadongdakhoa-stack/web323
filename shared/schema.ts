@@ -151,7 +151,13 @@ export const reportContentSchema = z.object({
     name: z.string(),
     age: z.number().nullable().optional(),
     gender: z.string().nullable().optional(),
-    diagnosis: z.string(),
+    // Legacy support (backward compatible)
+    diagnosis: z.string().optional(),
+    // New structured diagnosis with ICD codes (separate fields)
+    diagnosisMain: z.string().optional(),
+    diagnosisMainIcd: z.string().optional(),  // ✅ Separate ICD field
+    diagnosisSecondary: z.array(z.string()).optional(),
+    diagnosisSecondaryIcd: z.array(z.string()).optional(),  // ✅ Separate ICD array
   }).optional(),
   clinicalAssessment: z.string().min(1, "Đánh giá lâm sàng không được để trống"),
   recommendations: z.array(z.string()).min(1, "Phải có ít nhất một khuyến nghị"),

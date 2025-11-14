@@ -53,6 +53,10 @@ const evidenceItemSchema = z.object({
 const clinicalAnalysisSchema = z.object({
   renalAssessment: z.string(),
   drugDrugInteractions: z.array(z.string()),
+  drugDrugInteractionGroups: z.array(z.object({
+    rangeLabel: z.string(),
+    interactions: z.array(z.string()),
+  })).optional(),
   drugDiseaseInteractions: z.array(z.string()),
   doseAdjustments: z.array(z.string()),
   monitoring: z.array(z.string()),
@@ -231,8 +235,18 @@ function formatAnalysisToText(analysis: any): string {
     sections.push(`Đánh giá chức năng thận:\n${removeMarkdown(analysis.renalAssessment)}`);
   }
   
-  // Section 2: Tương tác thuốc-thuốc
-  if (analysis.drugDrugInteractions && analysis.drugDrugInteractions.length > 0) {
+  // Section 2: Tương tác thuốc-thuốc (with groups if available)
+  if (analysis.drugDrugInteractionGroups && analysis.drugDrugInteractionGroups.length > 0) {
+    // Use grouped interactions
+    const groupedSections = analysis.drugDrugInteractionGroups.map((group: any) => {
+      const groupInteractions = group.interactions.map((item: string, idx: number) => 
+        `  ${idx + 1}. ${removeMarkdown(item)}`
+      ).join('\n');
+      return `Tương tác thuốc (${group.rangeLabel}):\n${groupInteractions}`;
+    }).join('\n\n');
+    sections.push(groupedSections);
+  } else if (analysis.drugDrugInteractions && analysis.drugDrugInteractions.length > 0) {
+    // Fallback to flat interactions
     sections.push(`Tương tác thuốc-thuốc:\n${analysis.drugDrugInteractions.map((item: string, idx: number) => `${idx + 1}. ${removeMarkdown(item)}`).join('\n')}`);
   }
   
@@ -309,6 +323,12 @@ TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
     "Tương tác thuốc 1 với giải thích",
     "Tương tác thuốc 2 với giải thích"
   ],
+  "drugDrugInteractionGroups": [
+    {
+      "rangeLabel": "01/01/2024 - 05/01/2024",
+      "interactions": ["Tương tác trong khoảng thời gian này"]
+    }
+  ],
   "drugDiseaseInteractions": [
     "Tương tác thuốc-bệnh 1 với giải thích"
   ],
@@ -326,7 +346,10 @@ TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
   "additionalInfo": "Thông tin bổ sung từ bằng chứng y khoa"
 }
 
-Lưu ý: Mỗi field là STRING hoặc ARRAY of STRINGS. KHÔNG dùng markdown (**, *, #) trong nội dung.`;
+Lưu ý: 
+- Mỗi field là STRING hoặc ARRAY of STRINGS hoặc ARRAY of OBJECTS (cho drugDrugInteractionGroups)
+- KHÔNG dùng markdown (**, *, #) trong nội dung
+- drugDrugInteractionGroups: CHỈ điền nếu phân tích ban đầu có nhóm thuốc theo thời gian`;
 
   const finalAnalysisRaw = await callDeepSeek(
     deepseekVerificationSystemPrompt,
@@ -365,11 +388,15 @@ Lưu ý: Mỗi field là STRING hoặc ARRAY of STRINGS. KHÔNG dùng markdown (
 
   const sanitizedJSON = {
     renalAssessment: removeMarkdown(finalAnalysisJSON.renalAssessment || ""),
-    drugDrugInteractions: finalAnalysisJSON.drugDrugInteractions.map((item: string) => removeMarkdown(item)),
-    drugDiseaseInteractions: finalAnalysisJSON.drugDiseaseInteractions.map((item: string) => removeMarkdown(item)),
-    doseAdjustments: finalAnalysisJSON.doseAdjustments.map((item: string) => removeMarkdown(item)),
-    monitoring: finalAnalysisJSON.monitoring.map((item: string) => removeMarkdown(item)),
-    warnings: finalAnalysisJSON.warnings.map((item: string) => removeMarkdown(item)),
+    drugDrugInteractions: (finalAnalysisJSON.drugDrugInteractions || []).map((item: string) => removeMarkdown(item)),
+    drugDrugInteractionGroups: finalAnalysisJSON.drugDrugInteractionGroups?.map((group: any) => ({
+      rangeLabel: group.rangeLabel,
+      interactions: group.interactions.map((item: string) => removeMarkdown(item))
+    })) || [],
+    drugDiseaseInteractions: (finalAnalysisJSON.drugDiseaseInteractions || []).map((item: string) => removeMarkdown(item)),
+    doseAdjustments: (finalAnalysisJSON.doseAdjustments || []).map((item: string) => removeMarkdown(item)),
+    monitoring: (finalAnalysisJSON.monitoring || []).map((item: string) => removeMarkdown(item)),
+    warnings: (finalAnalysisJSON.warnings || []).map((item: string) => removeMarkdown(item)),
     additionalInfo: removeMarkdown(finalAnalysisJSON.additionalInfo || "")
   };
 
@@ -378,12 +405,37 @@ Lưu ý: Mỗi field là STRING hoặc ARRAY of STRINGS. KHÔNG dùng markdown (
   return {
     verified: true,
     perplexityFindings: cleanTextResponse(perplexityFindings),
-    finalAnalysis: finalAnalysisText
+    finalAnalysis: finalAnalysisText,
+    structuredAnalysis: sanitizedJSON  // Preserve structured data for UI
   };
 }
 
 export async function analyzePatientCase(caseData: any): Promise<any> {
+  const { groupMedicationsByDateOverlap } = await import('./medicationTimeline');
+  
   const systemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp tại bệnh viện Việt Nam. Nhiệm vụ của bạn là phân tích ca bệnh và đưa ra khuyến nghị về điều chỉnh liều thuốc, tương tác thuốc, và các vấn đề liên quan.`;
+
+  // Group medications by date overlap
+  const medicationSegments = groupMedicationsByDateOverlap(caseData.medications || []);
+  
+  // Build medication timeline section for prompt
+  let medicationTimelineSection = '';
+  if (medicationSegments.length > 0) {
+    medicationTimelineSection = medicationSegments.map((segment, idx) => {
+      const medList = segment.medications.map((med: any, medIdx: number) => 
+        `   ${medIdx + 1}. ${med.drugName} - ${med.prescribedDose} ${med.prescribedRoute} ${med.prescribedFrequency}`
+      ).join('\n');
+      
+      return `Nhóm ${idx + 1} (${segment.rangeLabel}):\n${medList}\n   → CHỈ kiểm tra tương tác giữa các thuốc trong khoảng thời gian này, không xét thuốc ở nhóm khác.`;
+    }).join('\n\n');
+  } else {
+    // Fallback to flat list if no grouping
+    medicationTimelineSection = caseData.medications?.map((med: any, idx: number) => `
+${idx + 1}. ${med.drugName}
+   - Chỉ định: ${med.indication || "Không rõ"}
+   - Liều hiện tại: ${med.prescribedDose} ${med.prescribedRoute} ${med.prescribedFrequency}
+`).join("\n") || "Chưa có thuốc";
+  }
 
   const userPrompt = `Hãy phân tích ca bệnh sau và cung cấp đánh giá lâm sàng:
 
@@ -404,16 +456,12 @@ XÉT NGHIỆM: ${JSON.stringify(caseData.labResults || {}, null, 2)}
 
 eGFR: ${caseData.egfr || "Chưa tính"} ml/min/1.73m²
 
-DANH SÁCH THUỐC:
-${caseData.medications?.map((med: any, idx: number) => `
-${idx + 1}. ${med.drugName}
-   - Chỉ định: ${med.indication || "Không rõ"}
-   - Liều hiện tại: ${med.prescribedDose} ${med.prescribedRoute} ${med.prescribedFrequency}
-`).join("\n") || "Chưa có thuốc"}
+DANH SÁCH THUỐC THEO THỜI GIAN SỬ DỤNG:
+${medicationTimelineSection}
 
 QUAN TRỌNG: Hãy cung cấp phân tích chi tiết bao gồm:
 1. Đánh giá chức năng thận và tác động đến các thuốc
-2. Kiểm tra tương tác thuốc-thuốc
+2. Kiểm tra tương tác thuốc-thuốc (phân nhóm theo thời gian nếu có nhiều nhóm)
 3. Kiểm tra tương tác thuốc-bệnh
 4. Khuyến nghị điều chỉnh liều (nếu cần)
 5. Các lưu ý theo dõi và cảnh báo
@@ -421,12 +469,22 @@ QUAN TRỌNG: Hãy cung cấp phân tích chi tiết bao gồm:
 TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
 {
   "renalAssessment": "đánh giá chức năng thận",
-  "drugDrugInteractions": ["tương tác 1", "tương tác 2"],
+  "drugDrugInteractions": ["tương tác tổng quan 1", "tương tác tổng quan 2"],
+  "drugDrugInteractionGroups": [
+    {
+      "rangeLabel": "${medicationSegments[0]?.rangeLabel || 'Ngày không rõ'}",
+      "interactions": ["tương tác cụ thể trong nhóm này"]
+    }
+  ],
   "drugDiseaseInteractions": ["tương tác bệnh 1"],
   "doseAdjustments": ["điều chỉnh 1", "điều chỉnh 2"],
   "monitoring": ["theo dõi 1", "theo dõi 2"],
   "warnings": ["cảnh báo 1"]
-}`;
+}
+
+Lưu ý: 
+- drugDrugInteractions: Tương tác chung (backward compatibility)
+- drugDrugInteractionGroups: Tương tác phân nhóm theo thời gian (CHỈ điền nếu có >= 2 nhóm thuốc theo timeline)`;
 
   const rawAnalysis = await callDeepSeek(systemPrompt, userPrompt);
   
@@ -533,13 +591,34 @@ export async function generateConsultationForm(
 ): Promise<any> {
   const systemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Hãy tạo phiếu tư vấn sử dụng thuốc chuẩn y khoa cho bệnh viện. QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích hay markdown.`;
 
+  // Build structured diagnosis string
+  let diagnosisText = '';
+  if (caseData.diagnosisMain) {
+    diagnosisText = caseData.diagnosisMain;
+    if (caseData.diagnosisMainIcd) {
+      diagnosisText += ` (${caseData.diagnosisMainIcd})`;
+    }
+  } else {
+    diagnosisText = caseData.diagnosis || 'Không có chẩn đoán';
+  }
+
+  const secondaryDiagnoses = caseData.diagnosisSecondary && Array.isArray(caseData.diagnosisSecondary) 
+    ? caseData.diagnosisSecondary.map((d: any, idx: number) => {
+        const icd = caseData.diagnosisSecondaryIcd && caseData.diagnosisSecondaryIcd[idx] 
+          ? ` (${caseData.diagnosisSecondaryIcd[idx]})` 
+          : '';
+        return `${d}${icd}`;
+      })
+    : [];
+
   const userPrompt = `Dựa trên thông tin ca bệnh và kết quả phân tích, hãy tạo phiếu tư vấn sử dụng thuốc:
 
 THÔNG TIN BỆNH NHÂN:
 - Họ tên: ${caseData.patientName}
 - Tuổi: ${caseData.patientAge}
 - Giới tính: ${caseData.patientGender}
-- Chẩn đoán: ${caseData.diagnosis}
+- Chẩn đoán chính: ${diagnosisText}
+${secondaryDiagnoses.length > 0 ? `- Chẩn đoán phụ: ${secondaryDiagnoses.join('; ')}` : ''}
 
 KẾT QUẢ PHÂN TÍCH:
 ${JSON.stringify(analysisResult, null, 2)}
@@ -552,9 +631,10 @@ TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
     "name": "${caseData.patientName}",
     "age": ${caseData.patientAge},
     "gender": "${caseData.patientGender}",
-    "diagnosis": "${caseData.diagnosis}"
+    "diagnosisMain": "${diagnosisText}",
+    "diagnosisSecondary": ${JSON.stringify(secondaryDiagnoses)}
   },
-  "clinicalAssessment": "Đánh giá lâm sàng chi tiết dựa trên phân tích AI và thông tin bệnh nhân",
+  "clinicalAssessment": "Đánh giá lâm sàng chi tiết dựa trên phân tích AI và thông tin bệnh nhân, bao gồm chẩn đoán và mã ICD-10",
   "recommendations": [
     "Khuyến nghị 1 dựa trên phân tích",
     "Khuyến nghị 2 dựa trên bằng chứng y khoa"
@@ -573,7 +653,9 @@ TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
 LƯU Ý: 
 - Tất cả arrays phải có ít nhất 1 item
 - Tất cả strings không được để trống
-- CHỈ TRẢ VỀ JSON, không thêm gì khác`;
+- CHỈ TRẢ VỀ JSON, không thêm gì khác
+- patientInfo.diagnosisMain: Chẩn đoán chính + mã ICD (nếu có)
+- patientInfo.diagnosisSecondary: Mảng các chẩn đoán phụ + mã ICD`;
 
   const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.5);
   
@@ -591,14 +673,35 @@ LƯU Ý:
     
     const parsed = JSON.parse(jsonString);
     
+    // Build default diagnosis strings with ICD codes
+    const defaultDiagnosisMain = caseData.diagnosisMain 
+      ? (caseData.diagnosisMainIcd ? `${caseData.diagnosisMain} (${caseData.diagnosisMainIcd})` : caseData.diagnosisMain)
+      : caseData.diagnosis || "Không có chẩn đoán";
+
+    const defaultSecondaryDiagnoses = caseData.diagnosisSecondary && Array.isArray(caseData.diagnosisSecondary)
+      ? caseData.diagnosisSecondary.map((d: any, idx: number) => {
+          const icd = caseData.diagnosisSecondaryIcd && caseData.diagnosisSecondaryIcd[idx]
+            ? ` (${caseData.diagnosisSecondaryIcd[idx]})`
+            : '';
+          return `${d}${icd}`;
+        })
+      : [];
+
     const ensuredData = {
       consultationDate: parsed.consultationDate || new Date().toISOString().split('T')[0],
       pharmacistName: parsed.pharmacistName || "Dược sĩ lâm sàng",
-      patientInfo: parsed.patientInfo || {
-        name: caseData.patientName,
-        age: caseData.patientAge,
-        gender: caseData.patientGender,
-        diagnosis: caseData.diagnosis
+      // ✅ ALWAYS merge structured fields even if parsed.patientInfo exists
+      patientInfo: {
+        name: parsed.patientInfo?.name || caseData.patientName,
+        age: parsed.patientInfo?.age || caseData.patientAge,
+        gender: parsed.patientInfo?.gender || caseData.patientGender,
+        // ✅ Structured diagnosis + ICD codes (ALWAYS included)
+        diagnosisMain: caseData.diagnosisMain || caseData.diagnosis || "Không có chẩn đoán",
+        diagnosisMainIcd: caseData.diagnosisMainIcd || null,
+        diagnosisSecondary: caseData.diagnosisSecondary || [],
+        diagnosisSecondaryIcd: caseData.diagnosisSecondaryIcd || [],
+        // Legacy fallback for old consumers
+        diagnosis: defaultDiagnosisMain,  // Combined string with ICD
       },
       clinicalAssessment: parsed.clinicalAssessment || "Đánh giá lâm sàng dựa trên phân tích AI",
       recommendations: Array.isArray(parsed.recommendations) && parsed.recommendations.length > 0
@@ -610,7 +713,9 @@ LƯU Ý:
       patientEducation: Array.isArray(parsed.patientEducation) && parsed.patientEducation.length > 0
         ? parsed.patientEducation
         : ["Dùng thuốc đúng liều, đúng giờ"],
-      followUp: parsed.followUp || "Tái khám theo lịch hẹn của bác sĩ"
+      followUp: parsed.followUp || "Tái khám theo lịch hẫn của bác sĩ",
+      // ✅ Structured analysis with grouped interactions (ALWAYS included)
+      structuredAnalysis: analysisResult.structuredAnalysis || null
     };
     
     return ensuredData;
