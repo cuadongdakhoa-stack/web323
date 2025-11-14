@@ -10,9 +10,10 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { ArrowLeft, FileText, Beaker, BookOpen, FileSignature, Pill, Loader2, CheckCircle2, AlertCircle, Search, ExternalLink, Edit, X, Save } from "lucide-react";
+import { ArrowLeft, FileText, Beaker, BookOpen, FileSignature, Pill, Loader2, CheckCircle2, AlertCircle, Search, ExternalLink, Edit, X, Save, FolderOpen } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import FileUploadSection from "@/components/FileUploadSection";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -296,6 +297,10 @@ export default function CaseDetail() {
             <Pill className="w-4 h-4 mr-2" />
             Đơn thuốc
           </TabsTrigger>
+          <TabsTrigger value="documents" data-testid="tab-documents">
+            <FolderOpen className="w-4 h-4 mr-2" />
+            Tài liệu
+          </TabsTrigger>
           <TabsTrigger value="analysis" data-testid="tab-analysis">
             <Beaker className="w-4 h-4 mr-2" />
             Phân tích AI
@@ -420,6 +425,10 @@ export default function CaseDetail() {
               )}
             </CardContent>
           </Card>
+        </TabsContent>
+
+        <TabsContent value="documents">
+          <FileUploadSection caseId={id!} />
         </TabsContent>
 
         <TabsContent value="analysis">
