@@ -73,9 +73,16 @@ export default function CaseDetail() {
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
+      const medicationCount = medications?.length || 0;
+      if (medicationCount > 20) {
+        toast({
+          title: "Đang phân tích...",
+          description: `Case có ${medicationCount} thuốc, quá trình có thể mất 1-2 phút`,
+        });
+      }
       return await apiRequest(`/api/cases/${id}/analyze`, {
         method: "POST",
-        timeout: 60000,  // 60 seconds for AI pipeline (DeepSeek → Perplexity → DeepSeek)
+        timeout: 120000,  // 120 seconds (2 minutes) for complex cases with many medications
       });
     },
     onSuccess: () => {
