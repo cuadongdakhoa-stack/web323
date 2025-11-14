@@ -721,25 +721,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update case status to completed after successful analysis
       await storage.updateCase(req.params.id, { status: "completed" });
 
-      // Auto-trigger evidence search to verify AI findings (fire-and-forget)
-      (async () => {
-        try {
-          const query = `Tương tác thuốc và điều chỉnh liều cho bệnh nhân ${caseData.patientName || 'Unknown'} với chẩn đoán ${caseData.diagnosisMain || caseData.diagnosis || 'Unknown'}`;
-          const evidenceResults = await searchMedicalEvidence(query);
-          
-          // Save each evidence item to database
-          for (const evidence of evidenceResults) {
-            await storage.createEvidence({
-              caseId: req.params.id,
-              query,
-              ...evidence,
-            });
-          }
-          console.log(`Auto-triggered evidence search completed for case ${req.params.id}`);
-        } catch (evidenceError) {
-          console.error("Auto evidence search failed (non-critical):", evidenceError);
+      // Auto-trigger evidence search BEFORE responding (critical for production/serverless)
+      // In production, fire-and-forget async is terminated when response completes
+      const caseId = req.params.id;
+      try {
+        console.log(`[Evidence Search] Starting auto-trigger for case ${caseId}`);
+        const query = `Tương tác thuốc và điều chỉnh liều cho bệnh nhân ${caseData.patientName || 'Unknown'} với chẩn đoán ${caseData.diagnosisMain || caseData.diagnosis || 'Unknown'}`;
+        console.log(`[Evidence Search] Query: ${query.substring(0, 100)}...`);
+        
+        const evidenceResults = await searchMedicalEvidence(query);
+        console.log(`[Evidence Search] Received ${evidenceResults.length} results for case ${caseId}`);
+        
+        // Save each evidence item to database
+        for (const evidence of evidenceResults) {
+          await storage.createEvidence({
+            caseId,
+            query,
+            ...evidence,
+          });
         }
-      })();
+        console.log(`[Evidence Search] ✅ Completed and saved ${evidenceResults.length} items for case ${caseId}`);
+      } catch (evidenceError: any) {
+        // Non-critical: log but don't fail the whole analysis
+        console.error(`[Evidence Search] ❌ Failed for case ${caseId}:`, evidenceError.message);
+        console.error(`[Evidence Search] Full error:`, evidenceError);
+      }
 
       res.json(analysis);
     } catch (error: any) {

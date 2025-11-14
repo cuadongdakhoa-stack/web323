@@ -87,15 +87,11 @@ export default function CaseDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", id, "analyses"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", id, "evidence"] });
       toast({
         title: "Phân tích thành công",
-        description: "Kết quả AI đã được lưu. Đang tìm bằng chứng y khoa...",
+        description: "Kết quả AI và bằng chứng y khoa đã được lưu",
       });
-      
-      // Background evidence search takes 10-20s, refetch evidence after delay
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/cases", id, "evidence"] });
-      }, 15000); // 15 seconds delay for background task
     },
     onError: (error: any) => {
       toast({
