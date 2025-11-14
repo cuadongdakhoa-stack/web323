@@ -71,7 +71,7 @@ export function AppSidebar() {
           <img src={logoUrl} alt="Cửa Đông Care+ Logo" className="w-10 h-10" />
           <div>
             <h2 className="font-semibold text-sm">Cửa Đông Care+</h2>
-            <p className="text-xs text-muted-foreground">Pharma Assistant</p>
+            <p className="text-xs text-muted-foreground">Trợ lý dược lâm sàng</p>
           </div>
         </div>
       </SidebarHeader>
