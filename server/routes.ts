@@ -681,6 +681,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "completed",
       });
 
+      // Update case status to completed after successful analysis
+      await storage.updateCase(req.params.id, { status: "completed" });
+
       // Auto-trigger evidence search to verify AI findings (fire-and-forget)
       (async () => {
         try {
