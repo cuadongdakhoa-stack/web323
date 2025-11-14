@@ -46,7 +46,7 @@ The application follows a client-server architecture.
 - **Chat AI Assistant**: A context-aware chatbot for clinical pharmacy questions.
 - **Multi-file Upload**: Supports uploading up to 10 files (PDF, DOCX, JPG, PNG) per case, with duplicate prevention and partial failure handling.
 - **Structured Diagnosis**: Integrates ICD-10 codes for main and secondary diagnoses, with AI extraction support.
-- **Medication Timeline**: Tracks usage start/end dates for medications, enabling timeline-based drug interaction checks.
+- **Medication Timeline**: Tracks usage start/end dates for medications, enabling **timeline-based drug interaction checks**. Implementation uses sweep-line algorithm (`server/medicationTimeline.ts`) to group medications by overlapping date ranges, ensuring AI only checks interactions between drugs used simultaneously. **Key features**: (1) Start date required for new medications to ensure data quality, (2) Backward-compatible handling of legacy medications without dates via conservative fallback strategies, (3) Three-case fallback logic: catch-all segment for mixed/undated medications, warning segments for undated entries, and general interaction review for sequential non-overlapping medications. This prevents false-negative interaction alerts while respecting actual medication timelines during hospital stays with changing regimens.
 
 ## External Dependencies
 

@@ -460,9 +460,18 @@ eGFR: ${caseData.egfr || "Chưa tính"} ml/min/1.73m²
 DANH SÁCH THUỐC THEO THỜI GIAN SỬ DỤNG:
 ${medicationTimelineSection}
 
-QUAN TRỌNG: Hãy cung cấp phân tích chi tiết bao gồm:
+QUAN TRỌNG - QUY TẮC KIỂM TRA TƯƠNG TÁC THUỐC:
+${medicationSegments.length > 0 
+  ? `- Danh sách thuốc đã được PHÂN NHÓM theo thời gian sử dụng
+- CHỈ kiểm tra tương tác giữa các thuốc TRONG CÙNG NHÓM (cùng thời điểm)
+- KHÔNG kiểm tra tương tác giữa thuốc ở nhóm này với thuốc ở nhóm khác
+- Ví dụ: Thuốc ở Nhóm 1 KHÔNG tương tác với thuốc ở Nhóm 2 vì không dùng cùng lúc`
+  : `- Danh sách thuốc CHƯA có thông tin ngày tháng rõ ràng
+- Kiểm tra tất cả tương tác có thể xảy ra`}
+
+Hãy cung cấp phân tích chi tiết bao gồm:
 1. Đánh giá chức năng thận và tác động đến các thuốc
-2. Kiểm tra tương tác thuốc-thuốc (phân nhóm theo thời gian nếu có nhiều nhóm)
+2. Kiểm tra tương tác thuốc-thuốc (${medicationSegments.length > 0 ? 'phân nhóm theo thời gian' : 'tổng hợp'})
 3. Kiểm tra tương tác thuốc-bệnh
 4. Khuyến nghị điều chỉnh liều (nếu cần)
 5. Các lưu ý theo dõi và cảnh báo

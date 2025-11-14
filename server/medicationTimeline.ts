@@ -120,53 +120,114 @@ export function groupMedicationsByDateOverlap(medications: Medication[]): Medica
     return 0;
   });
 
-  // Sweep through events to build segments
+  // Group events by unique timestamp to handle same-day events correctly
+  const eventsByTimestamp = new Map<number, TimelineEvent[]>();
+  const uniqueTimestamps: number[] = [];
+  
+  for (const event of events) {
+    const timestamp = event.date?.getTime() ?? (event.isInfinity && event.type === 'end' ? Infinity : -Infinity);
+    
+    if (!eventsByTimestamp.has(timestamp)) {
+      eventsByTimestamp.set(timestamp, []);
+      uniqueTimestamps.push(timestamp);
+    }
+    eventsByTimestamp.get(timestamp)!.push(event);
+  }
+  
+  // Sort unique timestamps
+  uniqueTimestamps.sort((a, b) => a - b);
+  
+  // Sweep through unique timestamps
   const segments: MedicationSegment[] = [];
   const activeMeds = new Set<Medication>();
-  let segmentStart: Date | null = null;
+  let prevTimestamp: number | null = null;
+  let prevActiveMeds: Set<Medication> | null = null;
 
-  for (let i = 0; i < events.length; i++) {
-    const event = events[i];
-    const prevActiveMeds = new Set(activeMeds);
-
-    if (event.type === 'start') {
-      activeMeds.add(event.medication);
-    } else {
-      activeMeds.delete(event.medication);
-    }
-
-    // If active set changed and previous set had 2+ meds, create segment
-    if (prevActiveMeds.size >= 2) {
-      const segmentEnd = event.date;
+  for (const timestamp of uniqueTimestamps) {
+    const eventsAtThisTime = eventsByTimestamp.get(timestamp)!;
+    
+    // If previous active set had 2+ meds and time has advanced, create segment
+    if (prevActiveMeds && prevActiveMeds.size >= 2 && prevTimestamp !== null && timestamp !== prevTimestamp) {
+      const segmentStart = prevTimestamp === -Infinity ? null : new Date(prevTimestamp);
+      const segmentEnd = timestamp === Infinity ? null : new Date(timestamp - 24 * 60 * 60 * 1000); // Exclusive end, minus 1 day for inclusive
+      
       segments.push({
         range: {
           start: segmentStart,
-          end: segmentEnd ? new Date(segmentEnd.getTime() - 24 * 60 * 60 * 1000) : null // Subtract 1 day to get inclusive end
+          end: segmentEnd
         },
-        rangeLabel: formatDateRange(segmentStart, segmentEnd ? new Date(segmentEnd.getTime() - 24 * 60 * 60 * 1000) : null),
+        rangeLabel: formatDateRange(segmentStart, segmentEnd),
         medications: Array.from(prevActiveMeds)
       });
     }
-
-    // Update segment start for next iteration
-    segmentStart = event.date;
+    
+    // Process all events at this timestamp
+    for (const event of eventsAtThisTime) {
+      if (event.type === 'start') {
+        activeMeds.add(event.medication);
+      } else {
+        activeMeds.delete(event.medication);
+      }
+    }
+    
+    // Take snapshot for next iteration
+    prevActiveMeds = new Set(activeMeds);
+    prevTimestamp = timestamp;
+  }
+  
+  // Create final segment if active set still has 2+ meds
+  if (prevActiveMeds && prevActiveMeds.size >= 2 && prevTimestamp !== null) {
+    const segmentStart = prevTimestamp === -Infinity ? null : new Date(prevTimestamp);
+    
+    segments.push({
+      range: {
+        start: segmentStart,
+        end: null // Open-ended
+      },
+      rangeLabel: formatDateRange(segmentStart, null),
+      medications: Array.from(prevActiveMeds)
+    });
   }
 
-  // Include medications without dates in ALL segments if any
+  // Handle medications without dates (backward compatibility)
   if (medsWithoutDates.length > 0) {
-    if (segments.length === 0 && medsWithoutDates.length >= 2) {
-      // Only undated medications
-      segments.push({
-        range: { start: null, end: null },
-        rangeLabel: "Ngày không rõ",
-        medications: medsWithoutDates
-      });
+    if (segments.length === 0) {
+      // Case 1: No dated medications created segments
+      // Check if we have ANY medications that could interact
+      const totalMeds = medsWithDates.length + medsWithoutDates.length;
+      
+      if (totalMeds >= 2) {
+        // Create catch-all segment with all medications
+        segments.push({
+          range: { start: null, end: null },
+          rangeLabel: "Ngày không rõ - kiểm tra tất cả tương tác",
+          medications: [...medsWithDates, ...medsWithoutDates]
+        });
+      }
     } else {
-      // Add undated medications to all existing segments
+      // Case 2: Some dated medications created segments
+      // Add undated medications to ALL dated segments (conservative: could interact anytime)
       for (const segment of segments) {
         segment.medications.push(...medsWithoutDates);
       }
+      
+      // Also create standalone warning segment to highlight undated meds
+      if (medsWithoutDates.length >= 1) {
+        segments.push({
+          range: { start: null, end: null },
+          rangeLabel: "CẢNH BÁO: Thuốc chưa có ngày sử dụng (cần cập nhật)",
+          medications: medsWithoutDates
+        });
+      }
     }
+  } else if (segments.length === 0 && medsWithDates.length >= 2) {
+    // Case 3: All meds have dates but no overlaps found (all sequential, no parallel use)
+    // Still need to check for interactions - create catch-all segment
+    segments.push({
+      range: { start: null, end: null },
+      rangeLabel: "Thuốc dùng không chồng lấp - kiểm tra tương tác chung",
+      medications: medsWithDates
+    });
   }
 
   return segments;
