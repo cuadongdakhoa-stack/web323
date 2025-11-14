@@ -680,6 +680,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
         status: "completed",
       });
 
+      // Auto-trigger evidence search to verify AI findings (fire-and-forget)
+      (async () => {
+        try {
+          const query = `Tương tác thuốc và điều chỉnh liều cho bệnh nhân ${caseData.patientName || 'Unknown'} với chẩn đoán ${caseData.diagnosisMain || caseData.diagnosis || 'Unknown'}`;
+          const evidenceResults = await searchMedicalEvidence(query);
+          
+          // Save each evidence item to database
+          for (const evidence of evidenceResults) {
+            await storage.createEvidence({
+              caseId: req.params.id,
+              query,
+              ...evidence,
+            });
+          }
+          console.log(`Auto-triggered evidence search completed for case ${req.params.id}`);
+        } catch (evidenceError) {
+          console.error("Auto evidence search failed (non-critical):", evidenceError);
+        }
+      })();
+
       res.json(analysis);
     } catch (error: any) {
       console.error("Analysis error:", error);
