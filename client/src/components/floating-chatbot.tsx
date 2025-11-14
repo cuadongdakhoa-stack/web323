@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Bot, X, Send, Loader2 } from "lucide-react";
+import { Bot, X, Send, Loader2, AlertCircle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 
 interface ChatMessage {
@@ -33,6 +33,7 @@ export function FloatingChatbot() {
       const response = await apiRequest("/api/chat", {
         method: "POST",
         body: JSON.stringify({ message }),
+        timeout: 20000,
       });
       return response.json();
     },
@@ -43,17 +44,26 @@ export function FloatingChatbot() {
       setCurrentMessage("");
     },
     onError: (error: any) => {
+      const errorMessage = error.message || "Không thể gửi tin nhắn";
       toast({
         variant: "destructive",
-        title: "Lỗi",
-        description: error.message || "Không thể gửi tin nhắn",
+        title: "Lỗi gửi tin nhắn",
+        description: errorMessage,
       });
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/chat"] });
     },
   });
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!currentMessage.trim() || sendMessageMutation.isPending) return;
-    sendMessageMutation.mutate(currentMessage);
+    
+    try {
+      await sendMessageMutation.mutateAsync(currentMessage);
+    } catch (error) {
+      console.error("Chat send error:", error);
+    }
   };
 
   const scrollToBottom = () => {
@@ -67,6 +77,12 @@ export function FloatingChatbot() {
       scrollToBottom();
     }
   }, [isOpen, chatHistory?.length]);
+
+  useEffect(() => {
+    if (sendMessageMutation.isSuccess) {
+      setTimeout(scrollToBottom, 100);
+    }
+  }, [sendMessageMutation.isSuccess]);
 
   return (
     <>
@@ -158,11 +174,24 @@ export function FloatingChatbot() {
                     </div>
                     <div className="flex justify-start">
                       <div 
-                        className="bg-muted rounded-lg px-4 py-2 break-words"
+                        className="bg-muted rounded-lg px-4 py-2 flex items-center gap-2"
                         data-testid="message-assistant-loading"
                       >
                         <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
+                        <p className="text-xs text-muted-foreground">Đang trả lời...</p>
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {sendMessageMutation.isError && (
+                  <div className="mt-4 flex justify-center">
+                    <div 
+                      className="bg-destructive/10 text-destructive rounded-lg px-4 py-2 flex items-center gap-2"
+                      data-testid="message-error"
+                    >
+                      <AlertCircle className="w-4 h-4" />
+                      <p className="text-xs">Có lỗi xảy ra. Vui lòng thử lại.</p>
                     </div>
                   </div>
                 )}
@@ -189,7 +218,11 @@ export function FloatingChatbot() {
                     disabled={!currentMessage.trim() || sendMessageMutation.isPending}
                     data-testid="button-send-message"
                   >
-                    <Send className="w-4 h-4" />
+                    {sendMessageMutation.isPending ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Send className="w-4 h-4" />
+                    )}
                   </Button>
                 </form>
               </div>

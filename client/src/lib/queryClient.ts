@@ -13,20 +13,36 @@ export async function apiRequest(
     method?: string;
     body?: any;
     headers?: Record<string, string>;
+    timeout?: number;
   }
 ): Promise<Response> {
-  const res = await fetch(url, {
-    method: options?.method || "GET",
-    headers: {
-      ...(options?.body ? { "Content-Type": "application/json" } : {}),
-      ...(options?.headers || {}),
-    },
-    body: options?.body,
-    credentials: "include",
-  });
+  const controller = new AbortController();
+  const timeoutMs = options?.timeout || 30000;
+  
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-  await throwIfResNotOk(res);
-  return res;
+  try {
+    const res = await fetch(url, {
+      method: options?.method || "GET",
+      headers: {
+        ...(options?.body ? { "Content-Type": "application/json" } : {}),
+        ...(options?.headers || {}),
+      },
+      body: options?.body,
+      credentials: "include",
+      signal: controller.signal,
+    });
+
+    clearTimeout(timeoutId);
+    await throwIfResNotOk(res);
+    return res;
+  } catch (error) {
+    clearTimeout(timeoutId);
+    if (error instanceof Error && error.name === 'AbortError') {
+      throw new Error('Yêu cầu quá lâu. Vui lòng thử lại.');
+    }
+    throw error;
+  }
 }
 
 type UnauthorizedBehavior = "returnNull" | "throw";
