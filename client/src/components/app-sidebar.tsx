@@ -30,7 +30,7 @@ const menuItems = [
     icon: LayoutDashboard,
   },
   {
-    title: "Ca bệnh",
+    title: "Case lâm sàng",
     url: "/cases",
     icon: FileText,
   },

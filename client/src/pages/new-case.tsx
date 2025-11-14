@@ -177,8 +177,8 @@ export default function NewCase() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
       toast({
-        title: "Tạo ca bệnh thành công",
-        description: "Ca bệnh đã được lưu vào hệ thống",
+        title: "Tạo case lâm sàng thành công",
+        description: "Case lâm sàng đã được lưu vào hệ thống",
       });
       setLocation(`/cases/${data.id}`);
     },
@@ -186,7 +186,7 @@ export default function NewCase() {
       toast({
         variant: "destructive",
         title: "Lỗi",
-        description: error.message || "Không thể tạo ca bệnh",
+        description: error.message || "Không thể tạo case lâm sàng",
       });
     },
   });
@@ -250,7 +250,7 @@ export default function NewCase() {
             Quay lại danh sách
           </Link>
         </Button>
-        <h1 className="text-3xl font-semibold mb-2">Tạo ca bệnh mới</h1>
+        <h1 className="text-3xl font-semibold mb-2">Tạo case lâm sàng mới</h1>
         <p className="text-muted-foreground">
           Nhập thông tin bệnh nhân hoặc upload file PDF/Word
         </p>
@@ -532,7 +532,7 @@ export default function NewCase() {
                 data-testid="button-save-case"
               >
                 <Save className="w-4 h-4 mr-2" />
-                {createCaseMutation.isPending ? "Đang lưu..." : "Lưu ca bệnh"}
+                {createCaseMutation.isPending ? "Đang lưu..." : "Lưu case lâm sàng"}
               </Button>
               <Button type="button" variant="outline" asChild>
                 <Link href="/cases">Hủy</Link>

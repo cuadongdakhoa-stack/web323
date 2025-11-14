@@ -87,7 +87,7 @@ export default function CaseDetail() {
       toast({
         variant: "destructive",
         title: "Lỗi phân tích",
-        description: error.message || "Không thể phân tích ca bệnh",
+        description: error.message || "Không thể phân tích case lâm sàng",
       });
     },
   });
@@ -250,8 +250,8 @@ export default function CaseDetail() {
     return (
       <div className="p-8 max-w-7xl mx-auto text-center">
         <FileText className="w-16 h-16 mx-auto text-muted-foreground mb-4" />
-        <h2 className="text-2xl font-semibold mb-2">Không tìm thấy ca bệnh</h2>
-        <p className="text-muted-foreground mb-4">Ca bệnh không tồn tại hoặc đã bị xóa</p>
+        <h2 className="text-2xl font-semibold mb-2">Không tìm thấy case lâm sàng</h2>
+        <p className="text-muted-foreground mb-4">Case lâm sàng không tồn tại hoặc đã bị xóa</p>
         <Button asChild>
           <Link href="/cases">
             <ArrowLeft className="w-4 h-4 mr-2" />
@@ -513,7 +513,7 @@ export default function CaseDetail() {
                   <Beaker className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
                   <p className="text-muted-foreground mb-4">Chưa có phân tích nào</p>
                   <p className="text-sm text-muted-foreground">
-                    Nhấn "Phân tích AI" để bắt đầu phân tích ca bệnh
+                    Nhấn "Phân tích AI" để bắt đầu phân tích case lâm sàng
                   </p>
                 </div>
               )}

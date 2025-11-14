@@ -16,14 +16,14 @@ export default function Library() {
       <div className="mb-8">
         <h1 className="text-3xl font-semibold mb-2">Thư viện</h1>
         <p className="text-muted-foreground">
-          Thống kê và quản lý dữ liệu ca bệnh
+          Thống kê và quản lý dữ liệu case lâm sàng
         </p>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">Tổng ca bệnh</CardTitle>
+            <CardTitle className="text-sm font-medium">Tổng case lâm sàng</CardTitle>
           </CardHeader>
           <CardContent>
             {isLoading ? (
@@ -70,7 +70,7 @@ export default function Library() {
       <Card>
         <CardHeader>
           <CardTitle>Chức năng thư viện</CardTitle>
-          <CardDescription>Tìm kiếm, lọc và phân tích ca bệnh</CardDescription>
+          <CardDescription>Tìm kiếm, lọc và phân tích case lâm sàng</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="text-center py-12">
