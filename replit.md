@@ -304,10 +304,13 @@ npx tsx server/seed.ts  # Seed 5 fixed users
 - [x] Case management (CRUD)
 - [x] Basic UI/UX
 - [x] Database schema
-- [x] Floating AI chatbot assistant
+- [x] Floating AI chatbot assistant (with 20s timeout fix)
 - [x] Consultation report generation
 - [x] OpenRouter API integration (DeepSeek + Perplexity)
 - [x] PDF/Word upload with auto-extraction (DeepSeek AI)
+- [x] Vietnamese localization with "Case lâm sàng" terminology
+- [x] Dashboard redesign with hero section and cases table
+- [x] Professional medical color scheme (Blue + Green)
 - [ ] AI analysis integration (pipeline)
 
 ### Phase 2: Advanced Features
