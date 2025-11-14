@@ -75,6 +75,7 @@ export default function CaseDetail() {
     mutationFn: async () => {
       return await apiRequest(`/api/cases/${id}/analyze`, {
         method: "POST",
+        timeout: 60000,  // 60 seconds for AI pipeline (DeepSeek → Perplexity → DeepSeek)
       });
     },
     onSuccess: () => {
