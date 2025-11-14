@@ -10,7 +10,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { ArrowLeft, FileText, Beaker, BookOpen, FileSignature, Pill, Loader2, CheckCircle2, AlertCircle, Search, ExternalLink, Edit, X, Save, FolderOpen } from "lucide-react";
+import { ArrowLeft, FileText, Beaker, BookOpen, FileSignature, Pill, Loader2, CheckCircle2, AlertCircle, Search, ExternalLink, Edit, X, Save, FolderOpen, Download, FileDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import FileUploadSection from "@/components/FileUploadSection";
@@ -791,15 +791,35 @@ export default function CaseDetail() {
                 {!isEditingReport ? (
                   <>
                     {report && (
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setIsEditingReport(true)}
-                        data-testid="button-edit-report"
-                      >
-                        <Edit className="w-4 h-4 mr-2" />
-                        Chỉnh sửa
-                      </Button>
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setIsEditingReport(true)}
+                          data-testid="button-edit-report"
+                        >
+                          <Edit className="w-4 h-4 mr-2" />
+                          Chỉnh sửa
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(`/api/cases/${id}/consultation-report/export/pdf`, '_blank')}
+                          data-testid="button-download-pdf"
+                        >
+                          <FileDown className="w-4 h-4 mr-2" />
+                          PDF
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => window.open(`/api/cases/${id}/consultation-report/export/docx`, '_blank')}
+                          data-testid="button-download-docx"
+                        >
+                          <Download className="w-4 h-4 mr-2" />
+                          DOCX
+                        </Button>
+                      </>
                     )}
                     <Button
                       onClick={() => generateReportMutation.mutate()}
