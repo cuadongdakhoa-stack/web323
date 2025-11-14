@@ -19,9 +19,9 @@ const extractedDataSchema = z.object({
   labResults: z.record(z.any()).nullable().optional(),
   medications: z.array(z.object({
     drugName: z.string(),
-    dose: z.string().optional(),
-    frequency: z.string().optional(),
-    route: z.string().optional(),
+    dose: z.string().nullable().optional(),
+    frequency: z.string().nullable().optional(),
+    route: z.string().nullable().optional(),
   })).nullable().optional(),
 });
 
