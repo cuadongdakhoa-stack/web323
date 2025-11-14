@@ -71,6 +71,18 @@ export const medications = pgTable("medications", {
 export const insertMedicationSchema = createInsertSchema(medications).omit({
   id: true,
   createdAt: true,
+}).extend({
+  // ✅ Accept both string (from HTML date input) and Date objects
+  usageStartDate: z.union([z.string(), z.date()]).nullable().optional().transform((val) => {
+    if (!val) return null;
+    if (typeof val === 'string') return new Date(val);
+    return val;
+  }),
+  usageEndDate: z.union([z.string(), z.date()]).nullable().optional().transform((val) => {
+    if (!val) return null;
+    if (typeof val === 'string') return new Date(val);
+    return val;
+  }),
 });
 export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;

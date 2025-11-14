@@ -518,6 +518,7 @@ Lưu ý:
     verified: verified.verified,
     evidenceFindings: verified.perplexityFindings,
     finalAnalysis: verified.finalAnalysis,
+    structuredAnalysis: verified.structuredAnalysis,  // ✅ Pass through from verifyWithPipeline
   };
 }
 
@@ -715,10 +716,7 @@ LƯU Ý:
         ? parsed.patientEducation
         : ["Dùng thuốc đúng liều, đúng giờ"],
       followUp: parsed.followUp || "Tái khám theo lịch hẫn của bác sĩ",
-      // ✅ Structured analysis with grouped interactions (check multiple locations)
-      structuredAnalysis: analysisResult.structuredAnalysis  // Top level
-        || (typeof analysisResult.finalAnalysis === 'object' ? analysisResult.finalAnalysis.structuredAnalysis : null)  // Nested in finalAnalysis
-        || null
+      // ✅ structuredAnalysis kept in analysis results, NOT in patient-facing report
     };
     
     return ensuredData;
