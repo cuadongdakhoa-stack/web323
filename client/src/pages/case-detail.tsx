@@ -77,12 +77,12 @@ export default function CaseDetail() {
       if (medicationCount > 20) {
         toast({
           title: "Đang phân tích...",
-          description: `Case có ${medicationCount} thuốc, quá trình có thể mất 1-2 phút`,
+          description: `Case có ${medicationCount} thuốc, quá trình có thể mất 2-5 phút`,
         });
       }
       return await apiRequest(`/api/cases/${id}/analyze`, {
         method: "POST",
-        timeout: 120000,  // 120 seconds (2 minutes) for complex cases with many medications
+        timeout: 300000,  // 300 seconds (5 minutes) for complex cases with many medications
       });
     },
     onSuccess: () => {
