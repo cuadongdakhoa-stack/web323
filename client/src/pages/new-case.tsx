@@ -91,72 +91,129 @@ export default function NewCase() {
     usageEndDate: "",
   });
 
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('file', file);
+    mutationFn: async (files: File[]) => {
+      const allExtractedData: any[] = [];
+      const errors: string[] = [];
+      const failedFiles: File[] = [];
       
-      const response = await fetch('/api/cases/extract', {
-        method: 'POST',
-        body: formData,
-        credentials: 'include',
-      });
+      try {
+        setIsExtracting(true);
+        
+        for (const file of files) {
+          try {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const response = await fetch('/api/cases/extract', {
+              method: 'POST',
+              body: formData,
+              credentials: 'include',
+            });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Upload failed');
+            if (!response.ok) {
+              const error = await response.json();
+              errors.push(`${file.name}: ${error.message || 'Upload failed'}`);
+              failedFiles.push(file);
+              continue;
+            }
+
+            const data = await response.json();
+            allExtractedData.push(data);
+          } catch (error: any) {
+            errors.push(`${file.name}: ${error.message || 'Lỗi không xác định'}`);
+            failedFiles.push(file);
+          }
+        }
+        
+        if (errors.length > 0 && allExtractedData.length === 0) {
+          throw new Error(`Không thể phân tích file:\n${errors.join('\n')}`);
+        }
+        
+        return { data: allExtractedData, errors, failedFiles };
+      } finally {
+        setIsExtracting(false);
       }
-
-      return response.json();
     },
-    onSuccess: (data) => {
-      if (!data || typeof data !== 'object') {
+    onSuccess: (result) => {
+      const { data: allData, errors, failedFiles } = result;
+      
+      if (!allData || allData.length === 0) {
         toast({
           variant: "destructive",
-          title: "Lỗi dữ liệu",
-          description: "Dữ liệu trích xuất không hợp lệ",
+          title: "Không có dữ liệu",
+          description: "Không thể trích xuất thông tin từ bất kỳ file nào",
         });
+        setSelectedFiles(failedFiles);
         return;
       }
 
-      setFormData(prev => ({
-        ...prev,
-        patientName: data.patientName || prev.patientName,
-        patientAge: data.patientAge?.toString() || prev.patientAge,
-        patientGender: data.patientGender || prev.patientGender,
-        patientWeight: data.patientWeight?.toString() || prev.patientWeight,
-        patientHeight: data.patientHeight?.toString() || prev.patientHeight,
-        diagnosisMain: data.diagnosis || prev.diagnosisMain,
-        medicalHistory: data.medicalHistory || prev.medicalHistory,
-        allergies: data.allergies || prev.allergies,
-      }));
+      let totalMeds = 0;
 
-      if (data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
-        const extractedMeds = data.medications
-          .filter((med: any) => med.drugName && med.drugName.trim())
-          .map((med: any, idx: number) => ({
-            id: `extracted-${Date.now()}-${idx}`,
-            drugName: med.drugName.trim(),
-            prescribedDose: med.dose || '',
-            prescribedFrequency: med.frequency || '',
-            prescribedRoute: med.route || 'Uống',
-            indication: '',
-          }));
-        
-        if (extractedMeds.length > 0) {
-          setMedications(prev => [...prev, ...extractedMeds]);
+      allData.forEach((data) => {
+        if (!data || typeof data !== 'object') return;
+
+        setFormData(prev => ({
+          ...prev,
+          patientName: data.patientName || prev.patientName,
+          patientAge: data.patientAge?.toString() || prev.patientAge,
+          patientGender: data.patientGender || prev.patientGender,
+          patientWeight: data.patientWeight?.toString() || prev.patientWeight,
+          patientHeight: data.patientHeight?.toString() || prev.patientHeight,
+          diagnosisMain: data.diagnosis || prev.diagnosisMain,
+          medicalHistory: data.medicalHistory || prev.medicalHistory,
+          allergies: data.allergies || prev.allergies,
+        }));
+
+        if (data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
+          setMedications(prev => {
+            const seenMedications = new Set<string>(
+              prev.map(m => m.drugName.trim().toLowerCase())
+            );
+            
+            const extractedMeds = data.medications
+              .filter((med: any) => {
+                if (!med.drugName || !med.drugName.trim()) return false;
+                const medKey = med.drugName.trim().toLowerCase();
+                if (seenMedications.has(medKey)) return false;
+                seenMedications.add(medKey);
+                return true;
+              })
+              .map((med: any, idx: number) => ({
+                id: `extracted-${Date.now()}-${idx}`,
+                drugName: med.drugName.trim(),
+                prescribedDose: med.dose || '',
+                prescribedFrequency: med.frequency || '',
+                prescribedRoute: med.route || 'Uống',
+                indication: '',
+                usageStartDate: '',
+                usageEndDate: '',
+              }));
+            
+            totalMeds += extractedMeds.length;
+            return [...prev, ...extractedMeds];
+          });
         }
-      }
+      });
 
-      setSelectedFile(null);
-      const medCount = data.medications?.filter((m: any) => m.drugName)?.length || 0;
+      setSelectedFiles(failedFiles);
+      
+      const successMsg = `Đã phân tích ${allData.length} file${totalMeds > 0 ? ` và trích xuất ${totalMeds} loại thuốc` : ''}`;
+      let errorMsg = '';
+      
+      if (errors.length > 0) {
+        const failedNames = failedFiles.map(f => f.name).join(', ');
+        errorMsg = `\n\nFile thất bại (${errors.length}): ${failedNames}`;
+      }
+      
       toast({
-        title: "Trích xuất thành công",
-        description: `Đã điền tự động thông tin bệnh nhân${medCount > 0 ? ` và ${medCount} loại thuốc` : ''}`,
+        title: errors.length > 0 ? "Phân tích một phần" : "Phân tích thành công",
+        description: successMsg + errorMsg,
+        variant: errors.length > 0 ? "default" : "default",
       });
     },
     onError: (error: any) => {
@@ -169,10 +226,45 @@ export default function NewCase() {
   });
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      setSelectedFile(file);
-      uploadMutation.mutate(file);
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      const newFiles = Array.from(files);
+      
+      const existingKeys = new Set(
+        selectedFiles.map(f => `${f.name}_${f.size}`)
+      );
+      
+      const uniqueNewFiles = newFiles.filter(file => {
+        const fileKey = `${file.name}_${file.size}`;
+        if (existingKeys.has(fileKey)) {
+          return false;
+        }
+        existingKeys.add(fileKey);
+        return true;
+      });
+      
+      if (uniqueNewFiles.length < newFiles.length) {
+        const duplicateCount = newFiles.length - uniqueNewFiles.length;
+        toast({
+          title: "File trùng lặp",
+          description: `Đã bỏ qua ${duplicateCount} file trùng lặp`,
+        });
+      }
+      
+      setSelectedFiles(prev => [...prev, ...uniqueNewFiles]);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleRemoveFile = (index: number) => {
+    setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAnalyze = () => {
+    if (selectedFiles.length > 0) {
+      uploadMutation.mutate(selectedFiles);
     }
   };
 
@@ -727,61 +819,90 @@ export default function NewCase() {
               <CardTitle>Upload tài liệu</CardTitle>
               <CardDescription>Tự động trích xuất thông tin từ file</CardDescription>
             </CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx"
+                accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
                 onChange={handleFileSelect}
                 className="hidden"
+                multiple
                 data-testid="input-file-upload"
               />
               
+              {selectedFiles.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium">File đã chọn ({selectedFiles.length}):</p>
+                  {selectedFiles.map((file, index) => (
+                    <div 
+                      key={index}
+                      className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
+                    >
+                      <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm truncate">{file.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(file.size / 1024).toFixed(1)} KB
+                        </p>
+                      </div>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        onClick={() => handleRemoveFile(index)}
+                        className="flex-shrink-0"
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <div 
-                className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover-elevate"
-                onClick={() => fileInputRef.current?.click()}
+                className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
+                onClick={() => !uploadMutation.isPending && fileInputRef.current?.click()}
                 data-testid="upload-dropzone"
               >
-                {uploadMutation.isPending ? (
-                  <>
-                    <Loader2 className="w-12 h-12 mx-auto text-primary mb-4 animate-spin" />
-                    <p className="text-sm font-medium mb-2">Đang trích xuất dữ liệu...</p>
-                    <p className="text-xs text-muted-foreground">
-                      AI đang phân tích nội dung tài liệu
-                    </p>
-                  </>
-                ) : selectedFile ? (
-                  <>
-                    <FileText className="w-12 h-12 mx-auto text-green-600 mb-4" />
-                    <p className="text-sm font-medium mb-2">{selectedFile.name}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {(selectedFile.size / 1024).toFixed(1)} KB
-                    </p>
-                  </>
-                ) : (
-                  <>
-                    <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-                    <p className="text-sm text-muted-foreground mb-2">
-                      Kéo thả hoặc click để chọn file
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Hỗ trợ: PDF, DOCX
-                    </p>
-                  </>
-                )}
+                <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                <p className="text-sm text-muted-foreground mb-1">
+                  Click để chọn file
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Hỗ trợ: PDF, DOC, DOCX, JPG, PNG
+                </p>
               </div>
 
-              {!uploadMutation.isPending && (
-                <Button 
-                  variant="outline" 
-                  className="w-full mt-4"
-                  onClick={() => fileInputRef.current?.click()}
-                  data-testid="button-choose-file"
-                >
-                  <Upload className="w-4 h-4 mr-2" />
-                  Chọn file
-                </Button>
-              )}
+              <div className="flex gap-2">
+                {!uploadMutation.isPending && (
+                  <>
+                    <Button 
+                      variant="outline" 
+                      className="flex-1"
+                      onClick={() => fileInputRef.current?.click()}
+                      data-testid="button-choose-file"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Thêm file
+                    </Button>
+                    {selectedFiles.length > 0 && (
+                      <Button 
+                        className="flex-1"
+                        onClick={handleAnalyze}
+                        data-testid="button-analyze"
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Phân tích
+                      </Button>
+                    )}
+                  </>
+                )}
+                {uploadMutation.isPending && (
+                  <div className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Đang phân tích {selectedFiles.length} file...
+                  </div>
+                )}
+              </div>
             </CardContent>
           </Card>
         </div>

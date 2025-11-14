@@ -323,7 +323,14 @@ npx tsx server/seed.ts  # Seed 5 fixed users
 - [x] Floating AI chatbot assistant (with 20s timeout fix)
 - [x] Consultation report generation
 - [x] OpenRouter API integration (DeepSeek + Perplexity)
-- [x] PDF/Word upload with auto-extraction (DeepSeek AI)
+- [x] **Multi-file upload with manual analysis trigger**
+  - Multiple file selection (PDF, DOCX, JPG, PNG)
+  - Incremental file addition with "+" button
+  - Duplicate file prevention (name + size check)
+  - Manual "Phân tích" button (no auto-analysis)
+  - Partial failure handling (preserve failed files for retry)
+  - Medication deduplication across analyses
+  - DeepSeek AI extraction with nullable medication fields
 - [x] Vietnamese localization with "Case lâm sàng" terminology
 - [x] Dashboard redesign with hero section and cases table
 - [x] Professional medical color scheme (Blue + Green)
