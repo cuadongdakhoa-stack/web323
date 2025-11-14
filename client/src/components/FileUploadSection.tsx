@@ -1,12 +1,12 @@
 import { useState, useRef } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { queryClient } from "@/lib/queryClient";
+import { queryClient, apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Upload, FileText, Loader2, Download, Trash2, File, Image } from "lucide-react";
+import { Upload, FileText, Loader2, Download, Trash2, File, Image, Sparkles } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -15,6 +15,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { z } from "zod";
 
 interface FileUploadSectionProps {
   caseId: string;
@@ -29,6 +31,34 @@ interface UploadedFile {
   mimeType: string;
   createdAt: string;
 }
+
+interface DocumentSuggestion {
+  needed: boolean;
+  reason: string;
+}
+
+interface DocumentSuggestions {
+  admin: DocumentSuggestion;
+  lab: DocumentSuggestion;
+  prescription: DocumentSuggestion;
+}
+
+const documentSuggestionSchema = z.object({
+  needed: z.boolean(),
+  reason: z.string(),
+});
+
+const documentSuggestionsSchema = z.object({
+  admin: documentSuggestionSchema,
+  lab: documentSuggestionSchema,
+  prescription: documentSuggestionSchema,
+});
+
+const DEFAULT_SUGGESTIONS: DocumentSuggestions = {
+  admin: { needed: false, reason: "Chưa có gợi ý" },
+  lab: { needed: true, reason: "Cần kết quả xét nghiệm để đánh giá" },
+  prescription: { needed: true, reason: "Cần đơn thuốc để kiểm tra tương tác" },
+};
 
 const FILE_GROUP_LABELS: Record<string, string> = {
   admin: "Hành chính",
@@ -89,6 +119,7 @@ function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "files", group] });
+      queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "suggest-documents"] });
       setSelectedFiles(null);
       if (fileInputRef.current) {
         fileInputRef.current.value = "";
@@ -312,25 +343,145 @@ function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
 }
 
 export default function FileUploadSection({ caseId }: FileUploadSectionProps) {
+  const { toast } = useToast();
+
+  const { data: suggestions, refetch } = useQuery<DocumentSuggestions>({
+    queryKey: ["/api/cases", caseId, "suggest-documents"],
+    queryFn: async () => {
+      const response = await apiRequest(`/api/cases/${caseId}/suggest-documents`, {
+        method: "POST",
+      });
+      const json = await response.json();
+      const data = json.suggestions || json;
+      
+      const validated = documentSuggestionsSchema.safeParse(data);
+      if (!validated.success) {
+        console.error("Invalid AI suggestions:", validated.error);
+        return DEFAULT_SUGGESTIONS;
+      }
+      return validated.data;
+    },
+    enabled: false,
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const showSuggestions = !!suggestions;
+
+  const getSuggestionsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest(`/api/cases/${caseId}/suggest-documents`, {
+        method: "POST",
+      });
+      const json = await response.json();
+      const data = json.suggestions || json;
+      
+      const validated = documentSuggestionsSchema.safeParse(data);
+      if (!validated.success) {
+        console.error("[AI Suggestions] Validation failed:", validated.error);
+        throw new Error("Dữ liệu AI không hợp lệ");
+      }
+      return validated.data;
+    },
+    onSuccess: (data) => {
+      queryClient.setQueryData(["/api/cases", caseId, "suggest-documents"], data);
+      
+      const isRealAI = 
+        data.admin.needed !== DEFAULT_SUGGESTIONS.admin.needed ||
+        data.lab.needed !== DEFAULT_SUGGESTIONS.lab.needed ||
+        data.prescription.needed !== DEFAULT_SUGGESTIONS.prescription.needed;
+      
+      toast({
+        title: isRealAI ? "Gợi ý từ AI" : "Gợi ý mặc định",
+        description: isRealAI ? "Đã nhận gợi ý tài liệu cần thiết" : "Hiển thị gợi ý mặc định",
+      });
+    },
+    onError: (error: any) => {
+      console.error("[AI Suggestions] Request failed:", {
+        error: error.message,
+        stack: error.stack,
+        caseId,
+        timestamp: new Date().toISOString(),
+      });
+      
+      queryClient.setQueryData(["/api/cases", caseId, "suggest-documents"], DEFAULT_SUGGESTIONS);
+      toast({
+        variant: "destructive",
+        title: "Lỗi",
+        description: error.message || "Không thể lấy gợi ý từ AI. Hiển thị gợi ý mặc định.",
+      });
+    },
+  });
+
+  const handleGetSuggestions = () => {
+    getSuggestionsMutation.mutate();
+  };
+
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Tài liệu đính kèm</CardTitle>
-        <CardDescription>
-          Quản lý file theo nhóm: Hành chính, Cận lâm sàng, Đơn thuốc
-        </CardDescription>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle>Tài liệu đính kèm</CardTitle>
+            <CardDescription>
+              Quản lý file theo nhóm: Hành chính, Cận lâm sàng, Đơn thuốc
+            </CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleGetSuggestions}
+            disabled={getSuggestionsMutation.isPending}
+            data-testid="button-ai-suggest"
+          >
+            {getSuggestionsMutation.isPending ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Sparkles className="w-4 h-4 mr-2" />
+            )}
+            Gợi ý AI
+          </Button>
+        </div>
       </CardHeader>
       <CardContent>
+        {showSuggestions && suggestions && (
+          <div className="mb-4 space-y-2">
+            {suggestions.admin?.needed && (
+              <Alert data-testid="alert-suggest-admin">
+                <AlertDescription>
+                  <strong>Hành chính:</strong> {suggestions.admin?.reason || "Cần tài liệu hành chính"}
+                </AlertDescription>
+              </Alert>
+            )}
+            {suggestions.lab?.needed && (
+              <Alert data-testid="alert-suggest-lab">
+                <AlertDescription>
+                  <strong>Cận lâm sàng:</strong> {suggestions.lab?.reason || "Cần kết quả xét nghiệm"}
+                </AlertDescription>
+              </Alert>
+            )}
+            {suggestions.prescription?.needed && (
+              <Alert data-testid="alert-suggest-prescription">
+                <AlertDescription>
+                  <strong>Đơn thuốc:</strong> {suggestions.prescription?.reason || "Cần đơn thuốc"}
+                </AlertDescription>
+              </Alert>
+            )}
+          </div>
+        )}
+
         <Tabs defaultValue="admin" className="space-y-4">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="admin" data-testid="tab-files-admin">
               {FILE_GROUP_LABELS.admin}
+              {suggestions?.admin?.needed && <Badge variant="destructive" className="ml-2">!</Badge>}
             </TabsTrigger>
             <TabsTrigger value="lab" data-testid="tab-files-lab">
               {FILE_GROUP_LABELS.lab}
+              {suggestions?.lab?.needed && <Badge variant="destructive" className="ml-2">!</Badge>}
             </TabsTrigger>
             <TabsTrigger value="prescription" data-testid="tab-files-prescription">
               {FILE_GROUP_LABELS.prescription}
+              {suggestions?.prescription?.needed && <Badge variant="destructive" className="ml-2">!</Badge>}
             </TabsTrigger>
           </TabsList>
 

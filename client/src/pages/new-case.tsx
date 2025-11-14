@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Save, Plus, Trash2, FileText, Loader2 } from "lucide-react";
+import { ArrowLeft, Upload, Save, Plus, Trash2, FileText, Loader2, X } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -19,6 +20,31 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+const ICD10_CODES = [
+  { code: "A09", name: "Tiêu chảy và viêm dạ dày ruột nhiễm trùng" },
+  { code: "A41.9", name: "Nhiễm trùng huyết không xác định" },
+  { code: "E11.9", name: "ĐTĐ typ 2 không biến chứng" },
+  { code: "E78.5", name: "Rối loạn lipid máu" },
+  { code: "I10", name: "Tăng huyết áp nguyên phát" },
+  { code: "I21.9", name: "NMCT cấp không xác định" },
+  { code: "I63.9", name: "Nhồi máu não không xác định" },
+  { code: "I50.9", name: "Suy tim không xác định" },
+  { code: "J18.9", name: "Viêm phổi không xác định" },
+  { code: "J45.9", name: "Hen phế quản không biến chứng" },
+  { code: "K35", name: "Viêm ruột thừa cấp" },
+  { code: "K80.2", name: "Sỏi túi mật không viêm túi mật" },
+  { code: "N18.5", name: "Bệnh thận mạn giai đoạn 5" },
+  { code: "O80", name: "Đẻ thường" },
+  { code: "S06.0", name: "Chấn động não" },
+  { code: "Z51.11", name: "Hóa trị ung thư" },
+];
+
+interface SecondaryDiagnosis {
+  id: string;
+  text: string;
+  icd: string;
+}
+
 interface Medication {
   id: string;
   drugName: string;
@@ -26,6 +52,8 @@ interface Medication {
   prescribedFrequency: string;
   prescribedRoute: string;
   indication: string;
+  usageStartDate: string;
+  usageEndDate: string;
 }
 
 export default function NewCase() {
@@ -39,11 +67,16 @@ export default function NewCase() {
     patientWeight: "",
     patientHeight: "",
     admissionDate: new Date().toISOString().split('T')[0],
-    diagnosis: "",
+    diagnosisMain: "",
+    diagnosisMainIcd: "",
     medicalHistory: "",
     allergies: "",
     status: "draft",
   });
+
+  const [secondaryDiagnoses, setSecondaryDiagnoses] = useState<SecondaryDiagnosis[]>([]);
+  const [currentSecondary, setCurrentSecondary] = useState({ text: "", icd: "" });
+  const [showSecondaryForm, setShowSecondaryForm] = useState(false);
 
   const [medications, setMedications] = useState<Medication[]>([]);
   const [showMedForm, setShowMedForm] = useState(false);
@@ -54,6 +87,8 @@ export default function NewCase() {
     prescribedFrequency: "",
     prescribedRoute: "Uống",
     indication: "",
+    usageStartDate: "",
+    usageEndDate: "",
   });
 
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -95,7 +130,7 @@ export default function NewCase() {
         patientGender: data.patientGender || prev.patientGender,
         patientWeight: data.patientWeight?.toString() || prev.patientWeight,
         patientHeight: data.patientHeight?.toString() || prev.patientHeight,
-        diagnosis: data.diagnosis || prev.diagnosis,
+        diagnosisMain: data.diagnosis || prev.diagnosisMain,
         medicalHistory: data.medicalHistory || prev.medicalHistory,
         allergies: data.allergies || prev.allergies,
       }));
@@ -142,11 +177,23 @@ export default function NewCase() {
   };
 
   const createCaseMutation = useMutation({
-    mutationFn: async (data: { caseData: any; medications: Medication[] }) => {
+    mutationFn: async (data: { caseData: any; medications: Medication[]; secondaryDiagnoses: SecondaryDiagnosis[] }) => {
+      const icdCodes = {
+        main: data.caseData.diagnosisMainIcd || "",
+        secondary: data.secondaryDiagnoses.filter(d => d.icd).map(d => d.icd),
+      };
+
+      const { diagnosisMainIcd, ...caseDataWithoutUIFields } = data.caseData;
+
       const caseResponse = await apiRequest("/api/cases", {
         method: "POST",
         body: JSON.stringify({
-          ...data.caseData,
+          ...caseDataWithoutUIFields,
+          diagnosis: data.caseData.diagnosisMain,
+          diagnosisMain: data.caseData.diagnosisMain,
+          diagnosisSecondary: data.secondaryDiagnoses.map(d => d.text),
+          icdCodes,
+          admissionDate: new Date(data.caseData.admissionDate).toISOString(),
           patientAge: parseInt(data.caseData.patientAge) || 0,
           patientWeight: data.caseData.patientWeight ? parseFloat(data.caseData.patientWeight) : null,
           patientHeight: data.caseData.patientHeight ? parseFloat(data.caseData.patientHeight) : null,
@@ -167,6 +214,8 @@ export default function NewCase() {
             prescribedFrequency: med.prescribedFrequency,
             prescribedRoute: med.prescribedRoute,
             indication: med.indication || "",
+            usageStartDate: med.usageStartDate ? new Date(med.usageStartDate).toISOString() : null,
+            usageEndDate: med.usageEndDate ? new Date(med.usageEndDate).toISOString() : null,
             orderIndex: i,
           }),
         });
@@ -193,7 +242,7 @@ export default function NewCase() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    createCaseMutation.mutate({ caseData: formData, medications });
+    createCaseMutation.mutate({ caseData: formData, medications, secondaryDiagnoses });
   };
 
   const handleChange = (field: string, value: string) => {
@@ -222,6 +271,8 @@ export default function NewCase() {
       prescribedFrequency: "",
       prescribedRoute: "Uống",
       indication: "",
+      usageStartDate: "",
+      usageEndDate: "",
     });
     setShowMedForm(false);
     toast({
@@ -349,15 +400,121 @@ export default function NewCase() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="diagnosis">Chẩn đoán <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="diagnosisMain">Chẩn đoán chính <span className="text-destructive">*</span></Label>
                   <Textarea
-                    id="diagnosis"
-                    data-testid="textarea-diagnosis"
-                    value={formData.diagnosis}
-                    onChange={(e) => handleChange("diagnosis", e.target.value)}
-                    rows={3}
+                    id="diagnosisMain"
+                    data-testid="textarea-diagnosis-main"
+                    value={formData.diagnosisMain}
+                    onChange={(e) => handleChange("diagnosisMain", e.target.value)}
+                    rows={2}
                     required
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="diagnosisMainIcd">Mã ICD-10 chẩn đoán chính</Label>
+                  <Input
+                    id="diagnosisMainIcd"
+                    data-testid="input-diagnosis-main-icd"
+                    value={formData.diagnosisMainIcd}
+                    onChange={(e) => handleChange("diagnosisMainIcd", e.target.value)}
+                    placeholder="Ví dụ: I10"
+                    list="icd-suggestions"
+                  />
+                  <datalist id="icd-suggestions">
+                    {ICD10_CODES.map((icd) => (
+                      <option key={icd.code} value={icd.code}>{icd.code} - {icd.name}</option>
+                    ))}
+                  </datalist>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Chẩn đoán phụ</Label>
+                  {secondaryDiagnoses.length > 0 && (
+                    <div className="space-y-2 mb-2">
+                      {secondaryDiagnoses.map((diag) => (
+                        <div key={diag.id} className="flex items-center gap-2 p-2 border rounded-md" data-testid={`secondary-diagnosis-${diag.id}`}>
+                          <div className="flex-1">
+                            <p className="text-sm">{diag.text}</p>
+                            {diag.icd && <Badge variant="outline" className="mt-1">{diag.icd}</Badge>}
+                          </div>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => setSecondaryDiagnoses(prev => prev.filter(d => d.id !== diag.id))}
+                            data-testid={`button-remove-secondary-${diag.id}`}
+                          >
+                            <X className="w-4 h-4 text-destructive" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {showSecondaryForm ? (
+                    <div className="space-y-2 p-3 border rounded-md bg-muted/30">
+                      <div className="space-y-2">
+                        <Label htmlFor="secondaryText">Chẩn đoán</Label>
+                        <Textarea
+                          id="secondaryText"
+                          data-testid="textarea-secondary-text"
+                          value={currentSecondary.text}
+                          onChange={(e) => setCurrentSecondary(prev => ({ ...prev, text: e.target.value }))}
+                          rows={2}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="secondaryIcd">Mã ICD-10</Label>
+                        <Input
+                          id="secondaryIcd"
+                          data-testid="input-secondary-icd"
+                          value={currentSecondary.icd}
+                          onChange={(e) => setCurrentSecondary(prev => ({ ...prev, icd: e.target.value }))}
+                          placeholder="Ví dụ: E11.9"
+                          list="icd-suggestions"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => {
+                            if (currentSecondary.text) {
+                              setSecondaryDiagnoses(prev => [...prev, { id: Date.now().toString(), ...currentSecondary }]);
+                              setCurrentSecondary({ text: "", icd: "" });
+                              setShowSecondaryForm(false);
+                            }
+                          }}
+                          data-testid="button-confirm-add-secondary"
+                        >
+                          Thêm
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setCurrentSecondary({ text: "", icd: "" });
+                            setShowSecondaryForm(false);
+                          }}
+                        >
+                          Hủy
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setShowSecondaryForm(true)}
+                      data-testid="button-add-secondary"
+                    >
+                      <Plus className="w-4 h-4 mr-2" />
+                      Thêm chẩn đoán phụ
+                    </Button>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -492,6 +649,29 @@ export default function NewCase() {
                         onChange={(e) => handleMedChange("indication", e.target.value)}
                         placeholder="Chỉ định sử dụng thuốc"
                       />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label htmlFor="usageStartDate">Ngày bắt đầu dùng</Label>
+                        <Input
+                          id="usageStartDate"
+                          data-testid="input-usage-start-date"
+                          type="date"
+                          value={currentMed.usageStartDate}
+                          onChange={(e) => handleMedChange("usageStartDate", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="usageEndDate">Ngày kết thúc dùng</Label>
+                        <Input
+                          id="usageEndDate"
+                          data-testid="input-usage-end-date"
+                          type="date"
+                          value={currentMed.usageEndDate}
+                          onChange={(e) => handleMedChange("usageEndDate", e.target.value)}
+                        />
+                      </div>
                     </div>
 
                     <div className="flex gap-2">

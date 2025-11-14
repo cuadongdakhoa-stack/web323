@@ -712,3 +712,47 @@ CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
     throw new Error("Lỗi phân tích dữ liệu từ AI: " + error.message);
   }
 }
+
+export async function suggestDocuments(caseData: any): Promise<{
+  admin: { needed: boolean; reason: string };
+  lab: { needed: boolean; reason: string };
+  prescription: { needed: boolean; reason: string };
+}> {
+  const systemPrompt = `Bạn là chuyên gia dược lâm sàng. Phân tích ca bệnh và đề xuất tài liệu cần thiết.`;
+
+  const userPrompt = `Phân tích ca bệnh sau và đề xuất tài liệu nào cần upload:
+
+Bệnh nhân: ${caseData.patientName}, ${caseData.patientAge} tuổi
+Chẩn đoán: ${caseData.diagnosis || "Chưa có"}
+${caseData.medicalHistory ? `Tiền sử: ${caseData.medicalHistory}` : ''}
+
+Các nhóm tài liệu:
+1. Hành chính: Giấy tờ hành chính, giấy xác nhận, đơn yêu cầu
+2. Cận lâm sàng: Kết quả xét nghiệm, siêu âm, X-quang, CT scan
+3. Đơn thuốc: Đơn kê thuốc, phiếu chỉ định dùng thuốc
+
+Trả về JSON (QUAN TRỌNG: CHỈ JSON, không thêm text khác):
+{
+  "admin": {"needed": true/false, "reason": "lý do ngắn gọn"},
+  "lab": {"needed": true/false, "reason": "lý do ngắn gọn"},
+  "prescription": {"needed": true/false, "reason": "lý do ngắn gọn"}
+}`;
+
+  try {
+    const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.3);
+    const cleanedResult = rawResult.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedResult);
+    return parsed;
+  } catch (error: any) {
+    return {
+      admin: { needed: false, reason: "Không thể phân tích" },
+      lab: { needed: true, reason: "Cần kết quả xét nghiệm để đánh giá" },
+      prescription: { needed: true, reason: "Cần đơn thuốc để kiểm tra tương tác" },
+    };
+  }
+}

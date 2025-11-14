@@ -27,7 +27,8 @@ import {
   generateConsultationForm,
   chatWithAI,
   extractDataFromDocument,
-  verifyWithPipeline
+  verifyWithPipeline,
+  suggestDocuments
 } from "./openrouter";
 import multer from "multer";
 import mammoth from "mammoth";
@@ -697,6 +698,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       res.status(500).json({ message: error.message || "Lỗi khi phân tích ca bệnh" });
+    }
+  });
+
+  app.post("/api/cases/:id/suggest-documents", requireAuth, async (req, res) => {
+    try {
+      const caseData = await storage.getCase(req.params.id);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+      }
+      
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền truy cập ca bệnh này" });
+      }
+
+      const suggestions = await suggestDocuments(caseData);
+      res.json(suggestions);
+    } catch (error: any) {
+      console.error("Suggest documents error:", error);
+      res.status(500).json({
+        admin: { needed: false, reason: "Lỗi phân tích" },
+        lab: { needed: true, reason: "Cần kết quả xét nghiệm" },
+        prescription: { needed: true, reason: "Cần đơn thuốc" },
+      });
     }
   });
 
