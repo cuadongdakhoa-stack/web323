@@ -47,21 +47,35 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md bg-[#f4f4f4]">
-        <CardHeader className="space-y-2 text-center">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-primary/5 via-background to-secondary/5 p-4 relative overflow-hidden">
+      {/* Background decorative elements */}
+      <div className="absolute inset-0 bg-grid-pattern opacity-5"></div>
+      <div className="absolute top-20 left-20 w-72 h-72 bg-primary/10 rounded-full blur-3xl"></div>
+      <div className="absolute bottom-20 right-20 w-96 h-96 bg-secondary/10 rounded-full blur-3xl"></div>
+      
+      <Card className="w-full max-w-md bg-[#f4f4f4] shadow-2xl border-tech-glow relative z-10">
+        <CardHeader className="space-y-2 text-center pb-6">
           <div className="flex justify-center mb-4">
-            <img src={logoUrl} alt="Cửa Đông Care+ Pharma Logo" className="w-16 h-16" />
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/20 rounded-full blur-md animate-pulse"></div>
+              <img 
+                src={logoUrl} 
+                alt="Cửa Đông Care+ Pharma Logo" 
+                className="w-20 h-20 relative z-10 ring-4 ring-primary/20 rounded-full" 
+              />
+            </div>
           </div>
-          <CardTitle className="text-2xl font-semibold">Cửa Đông Care+ Pharma</CardTitle>
-          <CardDescription className="text-base">
+          <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">
+            Cửa Đông Care+ Pharma
+          </CardTitle>
+          <CardDescription className="text-base text-muted-foreground">
             Hệ thống trợ lý dược lâm sàng chuyên nghiệp
           </CardDescription>
         </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+        <CardContent className="pb-8">
+          <form onSubmit={handleSubmit} className="space-y-5">
             <div className="space-y-2">
-              <Label htmlFor="username">Tên đăng nhập</Label>
+              <Label htmlFor="username" className="text-sm font-medium">Tên đăng nhập</Label>
               <Input
                 id="username"
                 data-testid="input-username"
@@ -69,10 +83,11 @@ export default function Login() {
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
                 required
+                className="bg-white/80 border-primary/20 focus:border-primary focus:ring-primary/20"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="password">Mật khẩu</Label>
+              <Label htmlFor="password" className="text-sm font-medium">Mật khẩu</Label>
               <Input
                 id="password"
                 data-testid="input-password"
@@ -80,12 +95,13 @@ export default function Login() {
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
+                className="bg-white/80 border-primary/20 focus:border-primary focus:ring-primary/20"
               />
             </div>
             <Button
               data-testid="button-login"
               type="submit"
-              className="w-full"
+              className="w-full bg-gradient-to-r from-primary to-primary/90 shadow-lg"
               disabled={loginMutation.isPending}
             >
               {loginMutation.isPending ? "Đang đăng nhập..." : "Đăng nhập"}
@@ -93,6 +109,13 @@ export default function Login() {
           </form>
         </CardContent>
       </Card>
+
+      {/* Footer credit */}
+      <footer className="mt-8 text-center text-sm text-muted-foreground relative z-10">
+        <p className="font-semibold bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          @Byhuonggiang2024
+        </p>
+      </footer>
     </div>
   );
 }
