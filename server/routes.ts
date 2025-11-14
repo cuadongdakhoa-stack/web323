@@ -240,33 +240,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post("/api/cases", requireAuth, async (req, res) => {
     try {
-      console.log('[POST /api/cases] req.body.labResults before validation:', req.body.labResults);
-      
       const validatedData = insertCaseSchema.parse({
         ...req.body,
         userId: req.user!.id,
         admissionDate: new Date(req.body.admissionDate),
       });
       
-      console.log('[POST /api/cases] validatedData.labResults after validation:', validatedData.labResults);
-      console.log('[POST /api/cases] age:', validatedData.patientAge, 'gender:', validatedData.patientGender);
-      
-      // Auto-calculate eGFR if creatinine is available in labResults
-      if (validatedData.labResults && validatedData.patientAge && validatedData.patientGender) {
-        const creatinine = extractCreatinine(validatedData.labResults);
-        if (creatinine) {
-          const egfrResult = calculateEGFR({
-            creatinine,
-            age: validatedData.patientAge,
-            gender: validatedData.patientGender,
-          });
-          
-          if (egfrResult) {
-            validatedData.egfr = egfrResult.egfr;
-            validatedData.egfrCategory = egfrResult.egfrCategory;
-            validatedData.renalFunction = egfrResult.renalFunction;
-            console.log('[POST /api/cases] eGFR calculated:', egfrResult);
-          }
+      // Auto-calculate eGFR if creatinine, age, and gender are provided
+      if (validatedData.creatinine !== undefined && validatedData.creatinine !== null && validatedData.patientAge && validatedData.patientGender) {
+        const egfrResult = calculateEGFR({
+          creatinine: validatedData.creatinine,
+          age: validatedData.patientAge,
+          gender: validatedData.patientGender,
+        });
+        
+        if (egfrResult) {
+          validatedData.egfr = egfrResult.egfr;
+          validatedData.egfrCategory = egfrResult.egfrCategory;
+          validatedData.renalFunction = egfrResult.renalFunction;
         }
       }
       
@@ -289,35 +280,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Không có quyền chỉnh sửa ca bệnh này" });
       }
       
-      console.log('[PATCH /api/cases/:id] req.body.labResults before validation:', req.body.labResults);
-      
       const validatedData = insertCaseSchema.partial().omit({ userId: true }).parse(req.body);
       
-      console.log('[PATCH /api/cases/:id] validatedData.labResults after validation:', validatedData.labResults);
-      
-      // Auto-calculate eGFR if creatinine is available in labResults
+      // Auto-calculate eGFR if creatinine, age, and gender are available
       // Use updated values if provided, otherwise fall back to existing case data
-      const labResults = validatedData.labResults ?? caseData.labResults;
+      const creatinine = validatedData.creatinine ?? caseData.creatinine;
       const age = validatedData.patientAge ?? caseData.patientAge;
       const gender = validatedData.patientGender ?? caseData.patientGender;
       
-      console.log('[PATCH /api/cases/:id] Final values - age:', age, 'gender:', gender, 'labResults:', labResults);
-      
-      if (labResults && age && gender) {
-        const creatinine = extractCreatinine(labResults);
-        if (creatinine) {
-          const egfrResult = calculateEGFR({
-            creatinine,
-            age,
-            gender,
-          });
-          
-          if (egfrResult) {
-            validatedData.egfr = egfrResult.egfr;
-            validatedData.egfrCategory = egfrResult.egfrCategory;
-            validatedData.renalFunction = egfrResult.renalFunction;
-            console.log('[PATCH /api/cases/:id] eGFR calculated:', egfrResult);
-          }
+      if (creatinine !== undefined && creatinine !== null && age && gender) {
+        const egfrResult = calculateEGFR({
+          creatinine,
+          age,
+          gender,
+        });
+        
+        if (egfrResult) {
+          validatedData.egfr = egfrResult.egfr;
+          validatedData.egfrCategory = egfrResult.egfrCategory;
+          validatedData.renalFunction = egfrResult.renalFunction;
         }
       }
       

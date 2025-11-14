@@ -66,6 +66,7 @@ export default function NewCase() {
     patientGender: "",
     patientWeight: "",
     patientHeight: "",
+    creatinine: "",
     admissionDate: new Date().toISOString().split('T')[0],
     diagnosisMain: "",
     diagnosisMainIcd: "",
@@ -327,6 +328,7 @@ export default function NewCase() {
           patientAge: parseInt(data.caseData.patientAge) || 0,
           patientWeight: data.caseData.patientWeight ? parseFloat(data.caseData.patientWeight) : null,
           patientHeight: data.caseData.patientHeight ? parseFloat(data.caseData.patientHeight) : null,
+          creatinine: data.caseData.creatinine ? parseFloat(data.caseData.creatinine) : null,
           labResults: {},
         }),
       });
@@ -507,6 +509,26 @@ export default function NewCase() {
                       value={formData.patientHeight}
                       onChange={(e) => handleChange("patientHeight", e.target.value)}
                     />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="creatinine">Creatinine huyết thanh (mg/dL)</Label>
+                    <Input
+                      id="creatinine"
+                      data-testid="input-creatinine"
+                      type="number"
+                      step="0.01"
+                      placeholder="Ví dụ: 1.2"
+                      value={formData.creatinine}
+                      onChange={(e) => handleChange("creatinine", e.target.value)}
+                    />
+                  </div>
+                  <div className="col-span-2 flex items-end">
+                    <p className="text-sm text-muted-foreground">
+                      eGFR sẽ tự động tính toán theo công thức CKD-EPI khi nhập creatinine
+                    </p>
                   </div>
                 </div>
 
