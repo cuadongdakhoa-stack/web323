@@ -172,8 +172,9 @@ export default function NewCase() {
         }));
         
         if (data.diagnosisSecondary && Array.isArray(data.diagnosisSecondary) && data.diagnosisSecondary.length > 0) {
+          const baseTimestamp = Date.now();
           const newSecondaryDiagnoses = data.diagnosisSecondary.map((text: string, idx: number) => ({
-            id: `extracted-secondary-${Date.now()}-${idx}`,
+            id: `extracted-secondary-${baseTimestamp + idx}`,
             text: text,
             icd: data.icdCodes?.secondary?.[idx] || "",
           }));
