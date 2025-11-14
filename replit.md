@@ -40,7 +40,7 @@ The application follows a client-server architecture.
 - **Case Management**: Allows creation (manual input or AI extraction from PDF/Word), viewing, updating, and deletion of patient cases. Supports attachment management with files categorized into Administrative, Paraclinical, and Prescription groups. Automatically calculates eGFR and renal function classification.
 - **AI Analysis**: Performs clinical analysis, drug dose adjustments, and drug-drug/drug-disease interaction checks, with recommendations tailored to renal function. **Timeout: 300 seconds (5 minutes)** to handle complex cases with 30+ medications.
 - **Evidence Search**: Integrates Perplexity to find international guidelines, clinical research, and meta-analyses to support recommendations. **Auto-triggered after AI analysis** with background processing and delayed frontend refetch (15s) for automatic display.
-- **Consultation Report Generation**: Creates standardized, exportable PDF consultation reports with version history.
+- **Consultation Report Generation**: Creates standardized consultation reports with version history. **Export formats: PDF and DOCX** with embedded Noto Sans Vietnamese font for proper diacritic rendering. Files named: `phieu-tu-van-{patient-name}-{date}.{ext}`.
 - **Case Library**: Provides filtering, searching, statistics, and trend analysis for past cases.
 - **Chat AI Assistant**: A context-aware chatbot for clinical pharmacy questions.
 - **Multi-file Upload**: Supports uploading up to 10 files (PDF, DOCX, JPG, PNG) per case, with duplicate prevention and partial failure handling.
@@ -71,4 +71,8 @@ The application follows a client-server architecture.
     - connect-pg-simple
     - bcrypt (for password hashing)
     - Zod (for validation)
-- **Fonts**: Google Fonts (Inter)
+    - PDFKit (PDF generation with Vietnamese font support)
+    - docx (DOCX generation)
+- **Fonts**: 
+    - Google Fonts (Inter) - UI typography
+    - Noto Sans (Regular + Bold TTF) - Vietnamese PDF export support
