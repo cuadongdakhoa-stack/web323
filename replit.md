@@ -1,428 +1,74 @@
 # Cửa Đông Care+ Pharma
 
-Hệ thống trợ lý dược lâm sàng chuyên nghiệp cho bệnh viện Việt Nam
-
-## Tổng quan dự án
-
-**Cửa Đông Care+ Pharma** là ứng dụng web toàn diện hỗ trợ dược sĩ và bác sĩ trong công tác dược lâm sàng tại bệnh viện. Ứng dụng tích hợp AI (DeepSeek + Perplexity) để phân tích ca bệnh, kiểm tra tương tác thuốc, tìm kiếm bằng chứng y khoa, và tạo phiếu tư vấn chuẩn hóa.
-
-### Tính năng chính
-
-1. **Quản lý ca bệnh**
-   - Tạo ca bệnh thủ công hoặc upload PDF/Word để AI trích xuất thông tin
-   - Quản lý file đính kèm theo 3 nhóm: Hành chính, Cận lâm sàng, Đơn thuốc
-   - Lưu trữ đầy đủ thông tin bệnh nhân, chẩn đoán, xét nghiệm
-   - Tính toán tự động eGFR và phân loại chức năng thận
-
-2. **Phân tích AI thông minh**
-   - Pipeline kiểm chứng 3 bước: DeepSeek → Perplexity → DeepSeek
-   - Phân tích lâm sàng và hiệu chỉnh liều thuốc
-   - Kiểm tra tương tác thuốc-thuốc, thuốc-bệnh
-   - Khuyến nghị dựa trên chức năng thận
-
-3. **Tìm kiếm bằng chứng y khoa**
-   - Tích hợp Perplexity để tìm guidelines quốc tế
-   - Nghiên cứu lâm sàng và meta-analysis
-   - Kiểm chứng khuyến nghị với bằng chứng khoa học
-
-4. **Tạo phiếu tư vấn thuốc**
-   - Phiếu tư vấn chuẩn hóa cho bệnh viện
-   - Xuất PDF để in và lưu trữ
-   - Theo dõi lịch sử phiếu tư vấn
-
-5. **Thư viện ca bệnh**
-   - Lọc và tìm kiếm theo nhiều tiêu chí
-   - Thống kê và phân tích xu hướng
-   - Chia sẻ kinh nghiệm lâm sàng
-
-6. **Chat AI Assistant**
-   - Trả lời câu hỏi về dược lâm sàng
-   - Context-aware với ca bệnh đang làm việc
-   - Hỗ trợ 24/7
-
-## Kiến trúc hệ thống
-
-### Frontend
-- **Framework**: React 18 + TypeScript
-- **Routing**: Wouter (lightweight React router)
-- **State Management**: TanStack Query (React Query v5)
-- **UI Components**: Shadcn/ui + Radix UI
-- **Styling**: Tailwind CSS + CSS Variables
-- **Design System**: Carbon Design System + Ant Design principles
-- **Icons**: Lucide React
-
-### Backend
-- **Runtime**: Node.js + Express
-- **Database**: PostgreSQL (Neon)
-- **ORM**: Drizzle ORM
-- **Authentication**: Passport.js + express-session
-- **Session Store**: PostgreSQL (connect-pg-simple)
-
-### AI Integration
-- **Provider**: OpenRouter API
-- **Models**: 
-  - DeepSeek Chat (deepseek/deepseek-chat) - Phân tích lâm sàng
-  - Perplexity Sonar Pro (perplexity/sonar-pro) - Tìm kiếm bằng chứng y khoa
-- **Encoding**: UTF-8 charset for Vietnamese characters
-
-### Pipeline kiểm chứng AI
-```
-1. DeepSeek phân tích ban đầu
-   ↓
-2. Perplexity tìm kiếm bằng chứng y khoa
-   ↓
-3. DeepSeek viết lại với độ chính xác cao
-```
-
-## Cấu trúc dự án
-
-```
-workspace/
-├── client/                 # Frontend React application
-│   └── src/
-│       ├── components/    # UI components
-│       │   ├── ui/       # Shadcn components
-│       │   ├── app-sidebar.tsx
-│       │   └── FileUploadSection.tsx
-│       ├── pages/        # Page components
-│       │   ├── login.tsx
-│       │   ├── dashboard.tsx
-│       │   ├── cases.tsx
-│       │   ├── new-case.tsx
-│       │   ├── case-detail.tsx
-│       │   ├── library.tsx
-│       │   └── chat.tsx
-│       ├── hooks/        # Custom React hooks
-│       ├── lib/          # Utilities
-│       ├── App.tsx       # Main app component
-│       └── index.css     # Global styles + theme
-├── server/               # Backend Express application
-│   ├── auth.ts          # Passport authentication setup
-│   ├── db.ts            # Database connection
-│   ├── storage.ts       # PostgreSQL storage layer
-│   ├── routes.ts        # API routes
-│   ├── openrouter.ts    # OpenRouter AI service
-│   ├── seed.ts          # Database seeding
-│   └── index.ts         # Server entry point
-├── shared/              # Shared code
-│   └── schema.ts        # Drizzle schema + Zod types
-├── design_guidelines.md # Frontend design system
-└── replit.md           # This file
-```
-
-## Database Schema
-
-### Users Table
-- Fixed 5 users với role-based permissions:
-  - `admin_cd` - Quản trị viên (admin)
-  - `duoc1`, `duoc2` - Dược sĩ (pharmacist)
-  - `bsnoi`, `bsicu` - Bác sĩ (doctor)
-
-### Cases Table
-- Thông tin bệnh nhân (tên, tuổi, giới tính, cân nặng, chiều cao)
-- Chẩn đoán, tiền sử bệnh, dị ứng
-- Kết quả xét nghiệm (JSON)
-- eGFR, phân loại chức năng thận
-- Upload file (PDF/Word data)
-- Status: draft, analyzing, completed
-
-### Medications Table
-- Liên kết với Cases (1-nhiều)
-- Thông tin thuốc: tên, chỉ định, liều, tần suất, đường dùng
-- Điều chỉnh liều (adjusted dose, frequency, route)
-- Lý do điều chỉnh
-- Order index (sắp xếp)
-
-### Analyses Table
-- Kết quả phân tích AI
-- Type: clinical_analysis, dose_adjustment, interaction_check
-- Result (JSON), Model used, Prompt, Status
-
-### Evidence Table
-- Bằng chứng y khoa từ Perplexity
-- Title, Source, URL, Summary
-- Relevance score, Citation count
-- Verification status (pending, verified)
-
-### Chat Messages Table
-- Lịch sử chat với AI
-- User, Role (user/assistant), Content
-- Metadata (JSON), Case context
-
-### Consultation Reports Table
-- Phiếu tư vấn sử dụng thuốc
-- Report content (JSON structure)
-- Generated by, Approved status
-
-### Uploaded Files Table
-- File đính kèm theo ca bệnh
-- Phân loại theo nhóm: admin (Hành chính), lab (Cận lâm sàng), prescription (Đơn thuốc)
-- Thông tin file: tên, loại, kích thước, MIME type
-- File path (internal storage), uploaded by, created at
-- **Hỗ trợ tất cả nhóm**: PDF, DOC, DOCX, JPG, PNG
-- **Upload nhiều file**: Chọn và upload đến 10 files cùng lúc
-
-## API Endpoints
-
-### Authentication
-- `POST /api/auth/login` - Đăng nhập
-- `POST /api/auth/logout` - Đăng xuất
-- `GET /api/auth/me` - Lấy thông tin user hiện tại
-
-### Cases
-- `GET /api/cases` - Danh sách ca bệnh (của user hoặc tất cả nếu admin)
-- `GET /api/cases/:id` - Chi tiết ca bệnh
-- `POST /api/cases` - Tạo ca bệnh mới
-- `POST /api/cases/extract` - Upload PDF/Word và tự động trích xuất thông tin bệnh nhân (DeepSeek AI)
-- `PATCH /api/cases/:id` - Cập nhật ca bệnh
-- `DELETE /api/cases/:id` - Xóa ca bệnh (cascade delete files)
-
-### Uploaded Files
-- `POST /api/cases/:id/files` - Upload multi-file theo nhóm (admin/lab/prescription, max 10 files)
-- `GET /api/cases/:id/files?group=` - Danh sách files theo ca bệnh và nhóm
-- `GET /api/files/:id/download` - Tải file (auth + ownership check, stream as blob)
-- `DELETE /api/files/:id` - Xóa file (remove from DB and disk)
-
-### Medications
-- `GET /api/cases/:id/medications` - Danh sách thuốc của ca bệnh
-- `POST /api/medications` - Thêm thuốc
-- `PATCH /api/medications/:id` - Cập nhật thuốc
-- `DELETE /api/medications/:id` - Xóa thuốc
-
-### Analyses
-- `GET /api/cases/:id/analyses` - Danh sách phân tích
-- `POST /api/analyses` - Tạo phân tích mới
-- `PATCH /api/analyses/:id` - Cập nhật phân tích
-
-### Evidence
-- `GET /api/cases/:id/evidence` - Bằng chứng của ca bệnh
-- `POST /api/evidence` - Thêm bằng chứng
-- `PATCH /api/evidence/:id` - Cập nhật trạng thái
-
-### Chat
-- `GET /api/chat?caseId=xxx` - Lịch sử chat (theo ca bệnh)
-- `POST /api/chat` - Gửi tin nhắn
-
-### Consultation Reports
-- `GET /api/cases/:id/consultation-report` - Phiếu tư vấn
-- `POST /api/consultation-reports` - Tạo phiếu mới
-- `PATCH /api/consultation-reports/:id` - Cập nhật phiếu
-
-## Environment Variables
-
-```bash
-# Database
-DATABASE_URL=postgresql://...
-PGHOST=...
-PGUSER=...
-PGPASSWORD=...
-PGDATABASE=...
-PGPORT=...
-
-# Session
-SESSION_SECRET=cuadong-care-pharma-secret-key
-
-# AI
-OPENROUTER_API_KEY=sk-or-v1-...
-```
-
-## Quy trình làm việc
-
-### 1. Tạo ca bệnh mới
-```
-User: Nhập thông tin → Backend: Lưu vào DB → Frontend: Redirect đến case detail
-```
-
-### 2. Phân tích AI ca bệnh
-```
-Frontend: Request phân tích
-    ↓
-Backend: Gọi DeepSeek (phân tích ban đầu)
-    ↓
-Backend: Gọi Perplexity (tìm bằng chứng)
-    ↓
-Backend: Gọi DeepSeek (viết lại verified)
-    ↓
-Backend: Lưu kết quả vào DB
-    ↓
-Frontend: Hiển thị kết quả
-```
-
-### 3. Tìm kiếm bằng chứng
-```
-User: Nhập query → Perplexity search → Lưu evidence → Hiển thị
-```
-
-### 4. Tạo phiếu tư vấn
-```
-DeepSeek: Generate form → Review → Approve → Export PDF
-```
-
-## Design System
-
-### Colors (Medical Blue Theme)
-- Primary: `hsl(203 85% 42%)` - Medical blue
-- Background: `hsl(210 5% 98%)` - Sáng, professional
-- Muted: `hsl(210 8% 90%)` - Neutral tones
-- Destructive: `hsl(0 72% 45%)` - Warnings
-
-### Typography
-- Font: Inter (via Google Fonts)
-- Sizes: xl/lg/base/sm/xs
-- Weights: semibold/medium/normal
-
-### Components
-- Cards: Elevated, rounded-lg, subtle shadows
-- Buttons: Medical blue primary, ghost variants
-- Tables: Sticky headers, hover states
-- Forms: Clear labels, required indicators
-- Badges: Rounded-full for status
-
-### Layout
-- Sidebar: Fixed 20rem width
-- Max content width: 7xl (1280px)
-- Spacing: 4, 6, 8 Tailwind units
-- Responsive: Mobile-first
-
-## Deployment
-
-### Development
-```bash
-npm run dev  # Starts Express + Vite dev server on port 5000
-```
-
-### Production
-```bash
-npm run build  # Build frontend + backend
-npm start      # Start production server
-```
-
-### Database
-```bash
-npm run db:push  # Sync Drizzle schema to PostgreSQL
-npx tsx server/seed.ts  # Seed 5 fixed users
-```
-
-## Testing Accounts
-
-| Username | Password | Role | Department |
-|----------|----------|------|-----------|
-| admin_cd | admin123 | Admin | Quản lý hệ thống |
-| duoc1 | duoc123 | Pharmacist | Khoa Dược |
-| duoc2 | duoc123 | Pharmacist | Khoa Dược |
-| bsnoi | bsnoi123 | Doctor | Khoa Nội |
-| bsicu | bsicu123 | Doctor | Khoa Hồi sức cấp cứu |
-
-## Roadmap
-
-### Phase 1: MVP (Current)
-- [x] Authentication system
-- [x] Case management (CRUD)
-- [x] Basic UI/UX
-- [x] Database schema
-- [x] Floating AI chatbot assistant (with 20s timeout fix)
-- [x] Consultation report generation
-- [x] OpenRouter API integration (DeepSeek + Perplexity)
-- [x] **Multi-file upload with manual analysis trigger**
-  - Multiple file selection (PDF, DOCX, JPG, PNG)
-  - Incremental file addition with "+" button
-  - Duplicate file prevention (name + size check)
-  - Manual "Phân tích" button (no auto-analysis)
-  - Partial failure handling (preserve failed files for retry)
-  - Medication deduplication across analyses
-  - DeepSeek AI extraction with nullable medication fields
-- [x] Vietnamese localization with "Case lâm sàng" terminology
-- [x] Dashboard redesign with hero section and cases table
-- [x] Professional medical color scheme (Blue + Green)
-- [ ] AI analysis integration (pipeline)
-
-### Phase 2: Advanced Features
-- [ ] Complete AI analysis pipeline (DeepSeek → Perplexity → DeepSeek)
-- [ ] Evidence search and verification
-- [ ] Advanced search & filters (Library page)
-- [ ] Statistics & analytics
-- [ ] Export to Excel/PDF
-- [ ] Mobile responsive improvements
-
-### Phase 3: Enterprise Features
-- [ ] Multi-hospital support
-- [ ] Advanced permissions
-- [ ] Audit logs
-- [ ] Integration with HIS systems
-- [ ] API for third-party apps
-
-## Best Practices
-
-### Code Style
-- TypeScript strict mode
-- ESLint + Prettier
-- Functional components with hooks
-- Server-side validation with Zod
-
-### Security
-- Password hashing with bcrypt (10 rounds)
-- Session-based authentication
-- CSRF protection (via express-session)
-- SQL injection prevention (Drizzle ORM)
-- Input validation on all endpoints
-
-### Performance
-- React Query caching
-- Database indexing on foreign keys
-- Lazy loading for large datasets
-- Optimistic UI updates
-
-## Troubleshooting
-
-### Common Issues
-
-**401 Unauthorized on /api/auth/me**
-- This is normal when not logged in
-- Frontend will redirect to /login
-
-**Database connection failed**
-- Check DATABASE_URL environment variable
-- Ensure PostgreSQL database is running
-- Run `npm run db:push` to sync schema
-
-**OpenRouter API errors**
-- Verify OPENROUTER_API_KEY is set
-- Check API quota and billing
-- Review error logs for specific issues
-- Ensure UTF-8 encoding header is set for Vietnamese text
-
-**Chatbot messages not displaying**
-- Fixed: API response must be parsed with `.json()` in mutation
-- Check that Content-Type includes `charset=utf-8`
-- Verify Perplexity model is `perplexity/sonar-pro` (updated from deprecated model)
-
-## Contributing
-
-### Development Workflow
-1. Create feature branch
-2. Make changes
-3. Test locally
-4. Submit for review
-5. Merge to main
-
-### Code Review Checklist
-- [ ] TypeScript types are correct
-- [ ] API validation with Zod
-- [ ] UI follows design guidelines
-- [ ] Vietnamese language consistency
-- [ ] Test IDs added for interactions
-- [ ] Error handling implemented
-
-## License
-
-Proprietary - Cửa Đông Hospital
-
-## Contact
-
-For support or inquiries, contact the development team.
-
----
-
-**Version**: 1.0.0  
-**Last Updated**: November 13, 2024  
-**Status**: Active Development
+## Overview
+
+Cửa Đông Care+ Pharma is a comprehensive web application designed to assist pharmacists and doctors in clinical pharmacy tasks within hospitals. The system leverages AI (DeepSeek and Perplexity) to analyze patient cases, check drug interactions, retrieve medical evidence, and generate standardized consultation reports. The project aims to enhance the efficiency and accuracy of clinical pharmacy practices in Vietnamese hospitals, ultimately improving patient care. Key capabilities include patient case management, AI-driven clinical analysis, evidence-based medicine search, and automated report generation.
+
+## User Preferences
+
+- I prefer simple language and clear explanations.
+- I like functional programming paradigms.
+- I want an iterative development approach with frequent updates.
+- Please ask for my approval before implementing major architectural changes or feature removals.
+- I prefer detailed explanations for complex logic or design decisions.
+- Do not make changes to the `shared/` folder without explicit instruction.
+- Do not make changes to the `design_guidelines.md` file.
+
+## System Architecture
+
+The application follows a client-server architecture.
+
+### UI/UX Decisions
+- **Design System**: Incorporates principles from Carbon Design System and Ant Design.
+- **Color Scheme**: Uses a "Medical Blue Theme" with `hsl(203 85% 42%)` as the primary color, `hsl(210 5% 98%)` for backgrounds, and neutral tones for muted elements.
+- **Typography**: Uses the Inter font from Google Fonts, with various sizes and weights.
+- **Components**: Features elevated, rounded cards, medical blue primary buttons, sticky-header tables, and clear form elements.
+- **Layout**: Fixed 20rem sidebar, max content width of 1280px (7xl), and mobile-first responsiveness.
+
+### Technical Implementations
+- **Frontend**: Built with React 18 and TypeScript, using Wouter for routing, TanStack Query for state management, Shadcn/ui + Radix UI for components, and Tailwind CSS for styling.
+- **Backend**: Developed with Node.js and Express.js.
+- **Database**: PostgreSQL, managed with Drizzle ORM.
+- **Authentication**: Implemented using Passport.js with `express-session` and `connect-pg-simple` for session storage.
+- **AI Integration**: Leverages OpenRouter API to orchestrate calls to DeepSeek Chat for clinical analysis and Perplexity Sonar Pro for medical evidence search.
+- **AI Verification Pipeline**: A 3-step process: initial analysis by DeepSeek, evidence search by Perplexity, and final refinement by DeepSeek for accuracy.
+- **Data Encoding**: UTF-8 charset is used for proper handling of Vietnamese characters across the system.
+- **Security**: Includes password hashing (bcrypt), session-based authentication, CSRF protection, and SQL injection prevention via Drizzle ORM.
+- **Performance**: Utilizes React Query caching, database indexing, lazy loading, and optimistic UI updates.
+
+### Feature Specifications
+- **Case Management**: Allows creation (manual input or AI extraction from PDF/Word), viewing, updating, and deletion of patient cases. Supports attachment management with files categorized into Administrative, Paraclinical, and Prescription groups. Automatically calculates eGFR and renal function classification.
+- **AI Analysis**: Performs clinical analysis, drug dose adjustments, and drug-drug/drug-disease interaction checks, with recommendations tailored to renal function.
+- **Evidence Search**: Integrates Perplexity to find international guidelines, clinical research, and meta-analyses to support recommendations.
+- **Consultation Report Generation**: Creates standardized, exportable PDF consultation reports with version history.
+- **Case Library**: Provides filtering, searching, statistics, and trend analysis for past cases.
+- **Chat AI Assistant**: A context-aware chatbot for clinical pharmacy questions.
+- **Multi-file Upload**: Supports uploading up to 10 files (PDF, DOCX, JPG, PNG) per case, with duplicate prevention and partial failure handling.
+- **Structured Diagnosis**: Integrates ICD-10 codes for main and secondary diagnoses, with AI extraction support.
+- **Medication Timeline**: Tracks usage start/end dates for medications, enabling timeline-based drug interaction checks.
+
+## External Dependencies
+
+- **Database**: PostgreSQL (specifically Neon for deployment)
+- **AI Services (via OpenRouter API)**:
+    - DeepSeek Chat (`deepseek/deepseek-chat`)
+    - Perplexity Sonar Pro (`perplexity/sonar-pro`)
+- **Frontend Libraries**:
+    - React 18
+    - TypeScript
+    - Wouter
+    - TanStack Query (React Query v5)
+    - Shadcn/ui
+    - Radix UI
+    - Tailwind CSS
+    - Lucide React (Icons)
+- **Backend Libraries**:
+    - Node.js
+    - Express.js
+    - Drizzle ORM
+    - Passport.js
+    - express-session
+    - connect-pg-simple
+    - bcrypt (for password hashing)
+    - Zod (for validation)
+- **Fonts**: Google Fonts (Inter)
