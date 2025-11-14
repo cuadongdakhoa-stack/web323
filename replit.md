@@ -159,7 +159,8 @@ workspace/
 - Phân loại theo nhóm: admin (Hành chính), lab (Cận lâm sàng), prescription (Đơn thuốc)
 - Thông tin file: tên, loại, kích thước, MIME type
 - File path (internal storage), uploaded by, created at
-- Hỗ trợ: PDF, DOC, DOCX, JPG, PNG (tùy nhóm)
+- **Hỗ trợ tất cả nhóm**: PDF, DOC, DOCX, JPG, PNG
+- **Upload nhiều file**: Chọn và upload đến 10 files cùng lúc
 
 ## API Endpoints
 

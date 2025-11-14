@@ -331,9 +331,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   function validateFileGroup(fileGroup: string, mimetype: string): boolean {
     const groupRules: Record<string, string[]> = {
-      admin: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      admin: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'],
       lab: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'],
-      prescription: ['application/pdf', 'image/jpeg', 'image/png']
+      prescription: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png']
     };
     return groupRules[fileGroup]?.includes(mimetype) || false;
   }
