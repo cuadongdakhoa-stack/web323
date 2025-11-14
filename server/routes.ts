@@ -12,11 +12,13 @@ import {
   insertEvidenceSchema,
   insertChatMessageSchema,
   insertConsultationReportSchema,
+  insertUploadedFileSchema,
   reportContentSchema,
   analysisResultSchema,
   medications,
   analyses,
-  evidence
+  evidence,
+  uploadedFiles
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { 
@@ -30,9 +32,20 @@ import {
 import multer from "multer";
 import mammoth from "mammoth";
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const require = createRequire(import.meta.url);
+  
+  const uploadsDir = path.join(__dirname, '..', 'uploads');
+  if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+  }
   
   app.post("/api/auth/login", (req, res, next) => {
     passport.authenticate("local", (err: any, user: any, info: any) => {
@@ -269,9 +282,275 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Không có quyền xóa ca bệnh này" });
       }
       
+      const files = await storage.getUploadedFilesByCase(req.params.id);
+      for (const file of files) {
+        try {
+          const fullPath = path.resolve(__dirname, '..', file.filePath);
+          if (fs.existsSync(fullPath)) {
+            fs.unlinkSync(fullPath);
+          }
+        } catch (fileError) {
+          console.error('[File Delete Error]', fileError);
+        }
+      }
+      
+      const caseDir = path.resolve(uploadsDir, path.basename(req.params.id));
+      if (fs.existsSync(caseDir)) {
+        try {
+          fs.rmSync(caseDir, { recursive: true, force: true });
+        } catch (dirError) {
+          console.error('[Directory Delete Error]', dirError);
+        }
+      }
+      
       await storage.deleteCase(req.params.id);
       res.json({ message: "Đã xóa ca bệnh" });
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const uploadFiles = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'image/jpeg',
+        'image/png'
+      ];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Chỉ chấp nhận file PDF, DOCX, JPG, hoặc PNG'));
+      }
+    }
+  });
+
+  function validateFileGroup(fileGroup: string, mimetype: string): boolean {
+    const groupRules: Record<string, string[]> = {
+      admin: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+      lab: ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'image/jpeg', 'image/png'],
+      prescription: ['application/pdf', 'image/jpeg', 'image/png']
+    };
+    return groupRules[fileGroup]?.includes(mimetype) || false;
+  }
+
+  app.post("/api/cases/:id/files", requireAuth, uploadFiles.array('files', 10), async (req, res) => {
+    try {
+      const caseId = req.params.id;
+      
+      if (!/^[a-f0-9-]{36}$/i.test(caseId)) {
+        return res.status(400).json({ message: "Case ID không hợp lệ" });
+      }
+
+      const caseData = await storage.getCase(caseId);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy case lâm sàng" });
+      }
+
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền upload file cho case này" });
+      }
+
+      const files = req.files as Express.Multer.File[];
+      if (!files || files.length === 0) {
+        return res.status(400).json({ message: "Không có file nào được tải lên" });
+      }
+
+      const fileGroup = req.body.fileGroup;
+      if (!['admin', 'lab', 'prescription'].includes(fileGroup)) {
+        return res.status(400).json({ message: "Nhóm file không hợp lệ" });
+      }
+
+      const safeCaseId = path.basename(caseId);
+      const caseDir = path.resolve(uploadsDir, safeCaseId, fileGroup);
+      
+      if (!caseDir.startsWith(path.resolve(uploadsDir))) {
+        return res.status(400).json({ message: "Path traversal detected" });
+      }
+
+      if (!fs.existsSync(caseDir)) {
+        fs.mkdirSync(caseDir, { recursive: true });
+      }
+
+      const uploadedFiles = [];
+      const writtenFiles: string[] = [];
+
+      try {
+        for (const file of files) {
+          if (!validateFileGroup(fileGroup, file.mimetype)) {
+            throw new Error(`File ${file.originalname} không phù hợp với nhóm ${fileGroup}`);
+          }
+
+          const fileExtension = path.extname(file.originalname);
+          const uniqueFilename = `${Date.now()}-${Math.random().toString(36).substring(7)}${fileExtension}`;
+          const filePath = path.resolve(caseDir, uniqueFilename);
+          
+          if (!filePath.startsWith(caseDir)) {
+            throw new Error("Invalid file path");
+          }
+          
+          fs.writeFileSync(filePath, file.buffer);
+          writtenFiles.push(filePath);
+
+          const relativePath = path.join('uploads', safeCaseId, fileGroup, uniqueFilename);
+          
+          const uploadedFile = await storage.createUploadedFile({
+            caseId: caseId,
+            fileName: file.originalname,
+            fileType: fileExtension.substring(1),
+            fileGroup: fileGroup,
+            filePath: relativePath,
+            fileSize: file.size,
+            mimeType: file.mimetype,
+            uploadedBy: user.id,
+            extractedData: null
+          });
+
+          uploadedFiles.push(uploadedFile);
+        }
+
+        res.status(201).json(uploadedFiles.map(f => ({
+          id: f.id,
+          fileName: f.fileName,
+          fileType: f.fileType,
+          fileGroup: f.fileGroup,
+          fileSize: f.fileSize,
+          mimeType: f.mimeType,
+          createdAt: f.createdAt
+        })));
+      } catch (error: any) {
+        for (const filePath of writtenFiles) {
+          try {
+            if (fs.existsSync(filePath)) {
+              fs.unlinkSync(filePath);
+            }
+          } catch (cleanupError) {
+            console.error('[File Cleanup Error]', cleanupError);
+          }
+        }
+        throw error;
+      }
+    } catch (error: any) {
+      console.error('[File Upload Error]', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/cases/:id/files", requireAuth, async (req, res) => {
+    try {
+      const caseData = await storage.getCase(req.params.id);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy case lâm sàng" });
+      }
+
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền xem file của case này" });
+      }
+
+      const fileGroup = req.query.group as string | undefined;
+      const files = await storage.getUploadedFilesByCase(req.params.id, fileGroup);
+      
+      const safeFiles = files.map(f => ({
+        id: f.id,
+        fileName: f.fileName,
+        fileType: f.fileType,
+        fileGroup: f.fileGroup,
+        fileSize: f.fileSize,
+        mimeType: f.mimeType,
+        createdAt: f.createdAt
+      }));
+      
+      res.json(safeFiles);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/files/:id/download", requireAuth, async (req, res) => {
+    try {
+      const files = await db.select().from(uploadedFiles).where(eq(uploadedFiles.id, req.params.id)).limit(1);
+      const fileRecord = files[0];
+      
+      if (!fileRecord) {
+        return res.status(404).json({ message: "Không tìm thấy file" });
+      }
+
+      const caseData = await storage.getCase(fileRecord.caseId);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy case lâm sàng" });
+      }
+
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền tải file này" });
+      }
+
+      const fullPath = path.resolve(__dirname, '..', fileRecord.filePath);
+      
+      if (!fullPath.startsWith(path.resolve(uploadsDir))) {
+        return res.status(403).json({ message: "Invalid file path" });
+      }
+
+      if (!fs.existsSync(fullPath)) {
+        return res.status(404).json({ message: "File không tồn tại trên server" });
+      }
+
+      res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(fileRecord.fileName)}"`);
+      res.setHeader('Content-Type', fileRecord.mimeType || 'application/octet-stream');
+      
+      const fileStream = fs.createReadStream(fullPath);
+      fileStream.pipe(res);
+    } catch (error: any) {
+      console.error('[File Download Error]', error);
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/files/:id", requireAuth, async (req, res) => {
+    try {
+      const files = await db.select().from(uploadedFiles).where(eq(uploadedFiles.id, req.params.id)).limit(1);
+      const fileRecord = files[0];
+      
+      if (!fileRecord) {
+        return res.status(404).json({ message: "Không tìm thấy file" });
+      }
+
+      const caseData = await storage.getCase(fileRecord.caseId);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy case lâm sàng" });
+      }
+
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền xóa file này" });
+      }
+
+      const fullPath = path.resolve(__dirname, '..', fileRecord.filePath);
+      
+      if (!fullPath.startsWith(path.resolve(uploadsDir))) {
+        return res.status(403).json({ message: "Invalid file path" });
+      }
+
+      let fileDeleted = false;
+      if (fs.existsSync(fullPath)) {
+        try {
+          fs.unlinkSync(fullPath);
+          fileDeleted = true;
+        } catch (fsError) {
+          console.error('[FS Delete Error]', fsError);
+          throw new Error('Không thể xóa file khỏi disk');
+        }
+      }
+
+      await storage.deleteUploadedFile(req.params.id);
+      res.json({ message: "Đã xóa file" });
+    } catch (error: any) {
+      console.error('[File Delete Error]', error);
       res.status(500).json({ message: error.message });
     }
   });

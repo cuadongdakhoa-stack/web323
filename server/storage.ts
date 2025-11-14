@@ -6,7 +6,8 @@ import {
   analyses, type Analysis, type InsertAnalysis,
   evidence, type Evidence, type InsertEvidence,
   chatMessages, type ChatMessage, type InsertChatMessage,
-  consultationReports, type ConsultationReport, type InsertConsultationReport
+  consultationReports, type ConsultationReport, type InsertConsultationReport,
+  uploadedFiles, type UploadedFile, type InsertUploadedFile
 } from "@shared/schema";
 import { eq, desc, and, or, sql, like } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -44,6 +45,10 @@ export interface IStorage {
   getConsultationReportByCase(caseId: string): Promise<ConsultationReport | undefined>;
   createConsultationReport(report: InsertConsultationReport): Promise<ConsultationReport>;
   updateConsultationReport(id: string, report: Partial<InsertConsultationReport>): Promise<ConsultationReport | undefined>;
+  
+  getUploadedFilesByCase(caseId: string, fileGroup?: string): Promise<UploadedFile[]>;
+  createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
+  deleteUploadedFile(id: string): Promise<void>;
 }
 
 export class PostgresStorage implements IStorage {
@@ -205,6 +210,29 @@ export class PostgresStorage implements IStorage {
       .where(eq(consultationReports.id, id))
       .returning();
     return result[0];
+  }
+
+  async getUploadedFilesByCase(caseId: string, fileGroup?: string): Promise<UploadedFile[]> {
+    if (fileGroup) {
+      return db.select().from(uploadedFiles)
+        .where(and(
+          eq(uploadedFiles.caseId, caseId),
+          eq(uploadedFiles.fileGroup, fileGroup)
+        ))
+        .orderBy(desc(uploadedFiles.createdAt));
+    }
+    return db.select().from(uploadedFiles)
+      .where(eq(uploadedFiles.caseId, caseId))
+      .orderBy(desc(uploadedFiles.createdAt));
+  }
+
+  async createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile> {
+    const result = await db.insert(uploadedFiles).values(file).returning();
+    return result[0];
+  }
+
+  async deleteUploadedFile(id: string): Promise<void> {
+    await db.delete(uploadedFiles).where(eq(uploadedFiles.id, id));
   }
 }
 

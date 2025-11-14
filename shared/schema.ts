@@ -26,6 +26,9 @@ export const cases = pgTable("cases", {
   patientHeight: real("patient_height"),
   admissionDate: timestamp("admission_date").notNull(),
   diagnosis: text("diagnosis").notNull(),
+  diagnosisMain: text("diagnosis_main"),
+  diagnosisSecondary: text("diagnosis_secondary").array(),
+  icdCodes: jsonb("icd_codes"),
   medicalHistory: text("medical_history"),
   allergies: text("allergies"),
   labResults: jsonb("lab_results"),
@@ -59,6 +62,8 @@ export const medications = pgTable("medications", {
   adjustedFrequency: text("adjusted_frequency"),
   adjustedRoute: text("adjusted_route"),
   adjustmentReason: text("adjustment_reason"),
+  usageStartDate: timestamp("usage_start_date"),
+  usageEndDate: timestamp("usage_end_date"),
   orderIndex: integer("order_index").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
@@ -178,3 +183,24 @@ export const insertChatMessageSchema = createInsertSchema(chatMessages).omit({
 });
 export type InsertChatMessage = z.infer<typeof insertChatMessageSchema>;
 export type ChatMessage = typeof chatMessages.$inferSelect;
+
+export const uploadedFiles = pgTable("uploaded_files", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  caseId: varchar("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").notNull(),
+  fileGroup: text("file_group").notNull(),
+  filePath: text("file_path").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
+  extractedData: jsonb("extracted_data"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+});
+
+export const insertUploadedFileSchema = createInsertSchema(uploadedFiles).omit({
+  id: true,
+  createdAt: true,
+});
+export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
+export type UploadedFile = typeof uploadedFiles.$inferSelect;
