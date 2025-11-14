@@ -57,11 +57,11 @@ function AuthenticatedRouter() {
         <div className="flex h-screen w-full">
           <AppSidebar />
           <div className="flex flex-col flex-1 overflow-hidden">
-            <header className="flex items-center justify-between h-16 px-6 border-b bg-background">
+            <header className="flex items-center justify-between h-16 px-6 border-b bg-background/95 backdrop-blur-md backdrop-saturate-180 shadow-sm">
               <div className="flex items-center gap-4">
                 <SidebarTrigger data-testid="button-sidebar-toggle" />
-                <h1 className="text-lg font-semibold text-foreground">
-                  Xin chào, {userData.user.fullName} – Cửa Đông Care+ Pharma
+                <h1 className="text-lg font-semibold">
+                  Xin chào, <span className="text-primary font-bold">{userData.user.fullName}</span> – <span className="text-tech-gradient">Cửa Đông Care+ Pharma</span>
                 </h1>
               </div>
             </header>

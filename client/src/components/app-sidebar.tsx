@@ -21,7 +21,7 @@ import {
 import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { Separator } from "@/components/ui/separator";
-import logoUrl from "@assets/Thiết kế chưa có tên (6)_1763057903176.png";
+import logoUrl from "@assets/Thiết kế chưa có tên (7)_1763135311761.png";
 
 const menuItems = [
   {
@@ -66,12 +66,15 @@ export function AppSidebar() {
 
   return (
     <Sidebar>
-      <SidebarHeader className="border-b p-4">
+      <SidebarHeader className="border-b p-4 bg-gradient-to-br from-primary/5 to-accent/5">
         <div className="flex items-center gap-3">
-          <img src={logoUrl} alt="Cửa Đông Care+ Logo" className="w-10 h-10" />
+          <div className="relative">
+            <img src={logoUrl} alt="Cửa Đông Care+ Logo" className="w-12 h-12 rounded-full shadow-lg ring-2 ring-primary/20" />
+            <div className="absolute inset-0 rounded-full bg-gradient-to-tr from-primary/10 to-transparent animate-pulse"></div>
+          </div>
           <div>
-            <h2 className="font-semibold text-sm">Cửa Đông Care+</h2>
-            <p className="text-xs text-muted-foreground">Trợ lý dược lâm sàng</p>
+            <h2 className="font-bold text-base bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Cửa Đông Care+</h2>
+            <p className="text-xs font-medium text-muted-foreground">Trợ lý dược lâm sàng</p>
           </div>
         </div>
       </SidebarHeader>

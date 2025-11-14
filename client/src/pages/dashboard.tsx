@@ -28,11 +28,11 @@ export default function Dashboard() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft":
-        return <Badge variant="secondary">Nháp</Badge>;
+        return <Badge variant="secondary" className="shadow-sm">Nháp</Badge>;
       case "analyzing":
-        return <Badge variant="default">Đang phân tích</Badge>;
+        return <Badge variant="default" className="bg-tech-gradient shadow-md">Đang phân tích</Badge>;
       case "completed":
-        return <Badge className="bg-green-600">Hoàn thành</Badge>;
+        return <Badge className="bg-gradient-to-r from-green-600 to-emerald-500 shadow-md">Hoàn thành</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
     }
@@ -40,29 +40,32 @@ export default function Dashboard() {
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
-      <div className="mb-12 text-center">
-        <h1 className="text-4xl font-bold mb-3">
-          Chào mừng trở lại, {userData?.user?.fullName}
-        </h1>
-        <p className="text-lg text-muted-foreground mb-8">
-          Quản lý và phân tích các case lâm sàng của bạn với trợ lý AI
-        </p>
-        <Button 
-          size="lg" 
-          variant="default"
-          className="text-lg font-semibold"
-          asChild 
-          data-testid="button-create-case-hero"
-        >
-          <Link href="/cases/new">
-            <Plus className="w-6 h-6 mr-3" />
-            TẠO CASE LÂM SÀNG
-            <Sparkles className="w-5 h-5 ml-3" />
-          </Link>
-        </Button>
+      <div className="mb-12 text-center relative">
+        <div className="absolute inset-0 bg-tech-gradient-subtle rounded-3xl -z-10"></div>
+        <div className="py-16 px-8">
+          <h1 className="text-5xl font-bold mb-4">
+            Chào mừng trở lại, <span className="text-tech-gradient">{userData?.user?.fullName}</span>
+          </h1>
+          <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
+            Quản lý và phân tích các case lâm sàng của bạn với trợ lý AI
+          </p>
+          <Button 
+            size="lg" 
+            variant="default"
+            className="text-lg font-semibold shadow-lg hover:shadow-xl transition-all border-tech-glow"
+            asChild 
+            data-testid="button-create-case-hero"
+          >
+            <Link href="/cases/new">
+              <Plus className="w-6 h-6 mr-3" />
+              TẠO CASE LÂM SÀNG
+              <Sparkles className="w-5 h-5 ml-3" />
+            </Link>
+          </Button>
+        </div>
       </div>
 
-      <Card>
+      <Card className="card-tech">
         <CardContent className="pt-6">
           {casesLoading ? (
             <div className="space-y-3">
@@ -74,11 +77,17 @@ export default function Dashboard() {
             </div>
           ) : cases && cases.length > 0 ? (
             <>
-              <div className="mb-4">
-                <h2 className="text-xl font-semibold">Danh sách Case lâm sàng</h2>
-                <p className="text-sm text-muted-foreground mt-1">
-                  {cases.length} case trong hệ thống
-                </p>
+              <div className="mb-6 flex items-center justify-between">
+                <div>
+                  <h2 className="text-2xl font-bold text-tech-gradient">Danh sách Case lâm sàng</h2>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    {cases.length} case trong hệ thống
+                  </p>
+                </div>
+                <Badge variant="outline" className="text-lg px-4 py-2 shadow-sm">
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  {cases.length}
+                </Badge>
               </div>
               <Table>
                 <TableHeader>
