@@ -48,7 +48,7 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <Card className="w-full max-w-md">
+      <Card className="w-full max-w-md bg-[#f4f4f4]">
         <CardHeader className="space-y-2 text-center">
           <div className="flex justify-center mb-4">
             <img src={logoUrl} alt="Cửa Đông Care+ Pharma Logo" className="w-16 h-16" />
