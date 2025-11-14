@@ -284,7 +284,8 @@ export async function verifyWithPipeline(
 ): Promise<{ 
   verified: boolean; 
   perplexityFindings: string; 
-  finalAnalysis: string 
+  finalAnalysis: string;
+  structuredAnalysis?: any;  // Optional structured data with grouped interactions
 }> {
   const perplexitySystemPrompt = `Bạn là trợ lý nghiên cứu y khoa. Nhiệm vụ của bạn là tìm kiếm các bằng chứng khoa học, guidelines, và nghiên cứu mới nhất để kiểm tra tính chính xác của thông tin được cung cấp.`;
   
@@ -714,8 +715,10 @@ LƯU Ý:
         ? parsed.patientEducation
         : ["Dùng thuốc đúng liều, đúng giờ"],
       followUp: parsed.followUp || "Tái khám theo lịch hẫn của bác sĩ",
-      // ✅ Structured analysis with grouped interactions (ALWAYS included)
-      structuredAnalysis: analysisResult.structuredAnalysis || null
+      // ✅ Structured analysis with grouped interactions (check multiple locations)
+      structuredAnalysis: analysisResult.structuredAnalysis  // Top level
+        || (typeof analysisResult.finalAnalysis === 'object' ? analysisResult.finalAnalysis.structuredAnalysis : null)  // Nested in finalAnalysis
+        || null
     };
     
     return ensuredData;
