@@ -10,7 +10,7 @@ import {
   uploadedFiles, type UploadedFile, type InsertUploadedFile,
   drugFormulary, type DrugFormulary, type InsertDrugFormulary
 } from "@shared/schema";
-import { eq, desc, and, or, sql, like } from "drizzle-orm";
+import { eq, desc, and, or, sql, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
 export interface IStorage {
@@ -248,12 +248,13 @@ export class PostgresStorage implements IStorage {
   }
 
   async searchDrugs(query: string): Promise<DrugFormulary[]> {
-    const searchPattern = `%${query}%`;
+    const trimmedQuery = query.trim();
+    const searchPattern = `%${trimmedQuery}%`;
     return db.select().from(drugFormulary)
       .where(or(
-        like(drugFormulary.tradeName, searchPattern),
-        like(drugFormulary.activeIngredient, searchPattern),
-        like(drugFormulary.manufacturer, searchPattern)
+        ilike(drugFormulary.tradeName, searchPattern),
+        ilike(drugFormulary.activeIngredient, searchPattern),
+        ilike(drugFormulary.manufacturer, searchPattern)
       ))
       .orderBy(drugFormulary.tradeName);
   }

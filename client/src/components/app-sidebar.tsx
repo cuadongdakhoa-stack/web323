@@ -7,6 +7,7 @@ import {
   LogOut,
   Pill,
 } from "lucide-react";
+import type { AuthMeResponse } from "@shared/schema";
 import {
   Sidebar,
   SidebarContent,
@@ -46,7 +47,7 @@ export function AppSidebar() {
   const [location, setLocation] = useLocation();
   const { toast } = useToast();
 
-  const { data: userData } = useQuery({
+  const { data: userData } = useQuery<AuthMeResponse>({
     queryKey: ["/api/auth/me"],
   });
 

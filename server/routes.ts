@@ -1377,7 +1377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Drug Formulary Routes
+  // Drug Formulary Routes (read-only for all authenticated users, write for admin only)
   app.get("/api/drugs", requireAuth, async (req, res) => {
     try {
       const { search } = req.query;
@@ -1409,24 +1409,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "File không có dữ liệu" });
       }
 
+      // Validate required columns
+      const firstRow: any = data[0];
+      const hasVietnameseHeaders = 'Tên thuốc' in firstRow || 'Hoạt chất' in firstRow;
+      const hasEnglishHeaders = 'tradeName' in firstRow || 'activeIngredient' in firstRow;
+      
+      if (!hasVietnameseHeaders && !hasEnglishHeaders) {
+        return res.status(400).json({ 
+          message: "File thiếu cột bắt buộc. Cần có: 'Tên thuốc', 'Hoạt chất' hoặc 'tradeName', 'activeIngredient'" 
+        });
+      }
+
       const drugs = data.map((row: any) => ({
-        tradeName: row['Tên thuốc'] || row['tradeName'] || '',
-        activeIngredient: row['Hoạt chất'] || row['activeIngredient'] || '',
-        strength: row['Hàm lượng'] || row['strength'] || '',
-        unit: row['Đơn vị'] || row['unit'] || '',
-        manufacturer: row['Nhà sản xuất'] || row['manufacturer'] || null,
-        notes: row['Ghi chú'] || row['notes'] || null,
+        tradeName: (row['Tên thuốc'] ?? row['tradeName'] ?? '').toString().trim(),
+        activeIngredient: (row['Hoạt chất'] ?? row['activeIngredient'] ?? '').toString().trim(),
+        strength: (row['Hàm lượng'] ?? row['strength'] ?? '').toString().trim(),
+        unit: (row['Đơn vị'] ?? row['unit'] ?? '').toString().trim(),
+        manufacturer: row['Nhà sản xuất'] ?? row['manufacturer'] ?? null,
+        notes: row['Ghi chú'] ?? row['notes'] ?? null,
       })).filter((drug: any) => drug.tradeName && drug.activeIngredient);
 
       if (drugs.length === 0) {
-        return res.status(400).json({ message: "Không tìm thấy dữ liệu hợp lệ trong file" });
+        return res.status(400).json({ 
+          message: `Không tìm thấy dữ liệu hợp lệ trong file. Kiểm tra ${data.length} dòng, tất cả đều thiếu tên thuốc hoặc hoạt chất.` 
+        });
       }
 
-      const inserted = await storage.createDrugsBatch(drugs);
-      res.json({ 
-        message: `Đã import thành công ${inserted.length} thuốc`,
+      // Validate each drug with schema
+      const validDrugs = [];
+      const errors = [];
+      
+      for (let i = 0; i < drugs.length; i++) {
+        try {
+          const validated = insertDrugFormularySchema.parse(drugs[i]);
+          validDrugs.push(validated);
+        } catch (error: any) {
+          errors.push(`Dòng ${i + 2}: ${error.message}`);
+        }
+      }
+
+      if (validDrugs.length === 0) {
+        return res.status(400).json({ 
+          message: "Không có dữ liệu hợp lệ để import",
+          errors: errors.slice(0, 5)
+        });
+      }
+
+      const inserted = await storage.createDrugsBatch(validDrugs);
+      
+      const response: any = { 
+        message: `Đã import thành công ${inserted.length}/${drugs.length} thuốc`,
         count: inserted.length 
-      });
+      };
+      
+      if (errors.length > 0) {
+        response.warnings = `${errors.length} dòng bị bỏ qua do lỗi validation`;
+        response.errorSample = errors.slice(0, 3);
+      }
+      
+      res.json(response);
     } catch (error: any) {
       console.error("[Drug Upload Error]", error);
       res.status(500).json({ message: error.message || "Lỗi khi upload danh mục thuốc" });

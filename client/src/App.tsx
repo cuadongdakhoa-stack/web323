@@ -16,11 +16,12 @@ import DrugFormulary from "@/pages/drug-formulary";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect } from "react";
+import type { AuthMeResponse } from "@shared/schema";
 
 function AuthenticatedRouter() {
   const [location, setLocation] = useLocation();
   
-  const { data: userData, isLoading } = useQuery({
+  const { data: userData, isLoading } = useQuery<AuthMeResponse>({
     queryKey: ["/api/auth/me"],
     retry: false,
   });
