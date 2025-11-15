@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { storage } from "./storage";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -73,6 +74,34 @@ const MODELS = {
 interface ChatMessage {
   role: "system" | "user" | "assistant";
   content: string;
+}
+
+async function buildReferenceDocumentsContext(categories?: string[]): Promise<string> {
+  try {
+    const allDocs = await storage.getAllReferenceDocuments();
+    
+    let filteredDocs = allDocs;
+    if (categories && categories.length > 0) {
+      filteredDocs = allDocs.filter(doc => categories.includes(doc.category));
+    }
+    
+    if (filteredDocs.length === 0) {
+      return '';
+    }
+    
+    const docSummaries = filteredDocs.map((doc, idx) => {
+      const excerpt = doc.extractedText && doc.extractedText.length > 500 
+        ? doc.extractedText.substring(0, 500) + '...' 
+        : (doc.extractedText || '');
+      
+      return `${idx + 1}. [${doc.category}] ${doc.title}${doc.description ? ` - ${doc.description}` : ''}\n   ${excerpt}`;
+    }).join('\n\n');
+    
+    return `\n\n📚 TÀI LIỆU THAM KHẢO Y HỌC (${filteredDocs.length} tài liệu):\n\n${docSummaries}\n`;
+  } catch (error) {
+    console.error('[Reference Documents Context Error]', error);
+    return '';
+  }
 }
 
 interface OpenRouterResponse {
@@ -462,7 +491,10 @@ ${idx + 1}. ${drugInfo}
     ? `\n\nLƯU Ý: Hệ thống đã tra cứu ${drugFormulary.length} thuốc trong danh mục bệnh viện để bổ sung thông tin hoạt chất và hàm lượng chính xác.`
     : '';
 
-  const userPrompt = `Hãy phân tích ca bệnh sau và cung cấp đánh giá lâm sàng:
+  // Fetch reference documents for AI context
+  const referenceContext = await buildReferenceDocumentsContext(['Guidelines', 'Pharmacology', 'Drug Information', 'Clinical Practice']);
+
+  const userPrompt = `Hãy phân tích ca bệnh sau và cung cấp đánh giá lâm sàng:${referenceContext}
 
 THÔNG TIN BỆNH NHÂN:
 - Họ tên: ${caseData.patientName}
@@ -766,6 +798,9 @@ export async function chatWithAI(
     previousMessages?: Array<{ role: string; content: string }>;
   }
 ): Promise<string> {
+  // Fetch reference documents for AI context
+  const referenceContext = await buildReferenceDocumentsContext();
+  
   const systemPrompt = `Em là "Trợ lý ảo Cửa Đông Care" - trợ lý dược lâm sàng của Bệnh viện Đa khoa Cửa Đông, TP Vinh, Nghệ An.
 
 PHONG CÁCH:
@@ -782,7 +817,7 @@ NHIỆM VỤ:
 LƯU Ý QUAN TRỌNG:
 - LUÔN kết thúc câu trả lời bằng disclaimer: "Đây là gợi ý mang tính hỗ trợ, quyết định cuối cùng thuộc về bác sĩ điều trị."
 - Không tự ý đưa ra quyết định điều trị chắc chắn
-- Khuyến khích kiểm tra với guidelines/nguồn đáng tin cậy`;
+- Khuyến khích kiểm tra với guidelines/nguồn đáng tin cậy${referenceContext}`;
 
   let userPrompt = userMessage;
 
