@@ -389,7 +389,7 @@ export default function CaseDetail() {
             <CardHeader>
               <CardTitle>Đơn thuốc</CardTitle>
               <CardDescription>
-                {medications?.length || 0} loại thuốc đang sử dụng
+                {medications?.length || 0} loại thuốc
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -403,6 +403,7 @@ export default function CaseDetail() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>Tên thuốc</TableHead>
+                      <TableHead>Trạng thái</TableHead>
                       <TableHead>Liều dùng</TableHead>
                       <TableHead>Tần suất</TableHead>
                       <TableHead>Đường dùng</TableHead>
@@ -412,38 +413,74 @@ export default function CaseDetail() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {medications.map((med: any) => (
-                      <TableRow key={med.id} data-testid={`row-medication-${med.id}`}>
-                        <TableCell className="font-medium">{med.drugName}</TableCell>
-                        <TableCell>
-                          {med.adjustedDose || med.prescribedDose}
-                          {med.adjustedDose && med.adjustedDose !== med.prescribedDose && (
-                            <Badge variant="secondary" className="ml-2">Đã hiệu chỉnh</Badge>
-                          )}
-                        </TableCell>
-                        <TableCell>{med.adjustedFrequency || med.prescribedFrequency}</TableCell>
-                        <TableCell>{med.adjustedRoute || med.prescribedRoute}</TableCell>
-                        <TableCell>
-                          {med.usageStartDate ? (
-                            <span className="text-sm text-nowrap">
-                              {new Date(med.usageStartDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell>
-                          {med.usageEndDate ? (
-                            <span className="text-sm text-nowrap">
-                              {new Date(med.usageEndDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
-                            </span>
-                          ) : (
-                            <span className="text-sm text-muted-foreground">-</span>
-                          )}
-                        </TableCell>
-                        <TableCell className="max-w-xs truncate">{med.indication || "-"}</TableCell>
-                      </TableRow>
-                    ))}
+                    {medications.map((med: any) => {
+                      const today = new Date();
+                      today.setHours(0, 0, 0, 0);
+                      
+                      const startDate = med.usageStartDate ? new Date(med.usageStartDate) : null;
+                      const endDate = med.usageEndDate ? new Date(med.usageEndDate) : null;
+                      
+                      let status: "active" | "stopped" | "unknown" = "unknown";
+                      if (startDate && startDate <= today) {
+                        status = (!endDate || endDate >= today) ? "active" : "stopped";
+                      } else if (!startDate && !endDate) {
+                        status = "unknown";
+                      } else if (startDate && startDate > today) {
+                        status = "stopped";
+                      } else if (endDate && endDate < today) {
+                        status = "stopped";
+                      }
+                      
+                      return (
+                        <TableRow key={med.id} data-testid={`row-medication-${med.id}`}>
+                          <TableCell className="font-medium">{med.drugName}</TableCell>
+                          <TableCell>
+                            {status === "active" && (
+                              <Badge variant="default" className="bg-green-600 hover:bg-green-700" data-testid={`badge-status-active-${med.id}`}>
+                                Đang dùng
+                              </Badge>
+                            )}
+                            {status === "stopped" && (
+                              <Badge variant="secondary" data-testid={`badge-status-stopped-${med.id}`}>
+                                Ngưng
+                              </Badge>
+                            )}
+                            {status === "unknown" && (
+                              <Badge variant="outline" data-testid={`badge-status-unknown-${med.id}`}>
+                                Không rõ
+                              </Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {med.adjustedDose || med.prescribedDose}
+                            {med.adjustedDose && med.adjustedDose !== med.prescribedDose && (
+                              <Badge variant="secondary" className="ml-2">Đã hiệu chỉnh</Badge>
+                            )}
+                          </TableCell>
+                          <TableCell>{med.adjustedFrequency || med.prescribedFrequency}</TableCell>
+                          <TableCell>{med.adjustedRoute || med.prescribedRoute}</TableCell>
+                          <TableCell>
+                            {med.usageStartDate ? (
+                              <span className="text-sm text-nowrap">
+                                {new Date(med.usageStartDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {med.usageEndDate ? (
+                              <span className="text-sm text-nowrap">
+                                {new Date(med.usageEndDate).toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+                              </span>
+                            ) : (
+                              <span className="text-sm text-muted-foreground">-</span>
+                            )}
+                          </TableCell>
+                          <TableCell className="max-w-xs truncate">{med.indication || "-"}</TableCell>
+                        </TableRow>
+                      );
+                    })}
                   </TableBody>
                 </Table>
               ) : (
