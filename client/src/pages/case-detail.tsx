@@ -356,8 +356,16 @@ export default function CaseDetail() {
                 <p className="text-base">{caseData.patientHeight || "Không có"} cm</p>
               </div>
               <div>
+                <p className="text-sm font-medium text-muted-foreground">Creatinine</p>
+                <p className="text-base" data-testid="text-creatinine">
+                  {caseData.creatinine 
+                    ? `${caseData.creatinine} ${caseData.creatinineUnit || "mg/dL"}` 
+                    : "Chưa có"}
+                </p>
+              </div>
+              <div>
                 <p className="text-sm font-medium text-muted-foreground">eGFR</p>
-                <p className="text-base">
+                <p className="text-base" data-testid="text-egfr">
                   {caseData.egfr ? `${caseData.egfr} ml/min/1.73m²` : "Chưa tính"}
                 </p>
               </div>
