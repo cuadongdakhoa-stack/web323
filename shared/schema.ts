@@ -250,3 +250,27 @@ export const insertDrugFormularySchema = createInsertSchema(drugFormulary).omit(
 });
 export type InsertDrugFormulary = z.infer<typeof insertDrugFormularySchema>;
 export type DrugFormulary = typeof drugFormulary.$inferSelect;
+
+export const referenceDocuments = pgTable("reference_documents", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: text("title").notNull(),
+  description: text("description"),
+  category: text("category").notNull(),
+  fileName: text("file_name").notNull(),
+  fileType: text("file_type").notNull(),
+  filePath: text("file_path").notNull(),
+  fileSize: integer("file_size"),
+  mimeType: text("mime_type"),
+  uploadedBy: varchar("uploaded_by").notNull().references(() => users.id),
+  extractedText: text("extracted_text"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertReferenceDocumentSchema = createInsertSchema(referenceDocuments).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertReferenceDocument = z.infer<typeof insertReferenceDocumentSchema>;
+export type ReferenceDocument = typeof referenceDocuments.$inferSelect;
