@@ -13,6 +13,7 @@ import {
   insertChatMessageSchema,
   insertConsultationReportSchema,
   insertUploadedFileSchema,
+  insertDrugFormularySchema,
   reportContentSchema,
   analysisResultSchema,
   medications,
@@ -35,6 +36,7 @@ import { calculateEGFR, extractCreatinine } from "./egfrCalculator";
 import multer from "multer";
 import mammoth from "mammoth";
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
+import * as XLSX from 'xlsx';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -1369,6 +1371,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(503).json({ message: "Dịch vụ AI không khả dụng" });
       }
       res.status(500).json({ message: "Lỗi khi chat với AI" });
+    }
+  });
+
+  // Drug Formulary Routes
+  app.get("/api/drugs", requireAuth, async (req, res) => {
+    try {
+      const { search } = req.query;
+      const drugs = search 
+        ? await storage.searchDrugs(search as string) 
+        : await storage.getAllDrugs();
+      res.json(drugs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.post("/api/drugs/upload", requireAuth, requireRole("admin"), upload.single('file'), async (req, res) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({ message: "Không có file được tải lên" });
+      }
+
+      if (!req.file.mimetype.includes('spreadsheet') && !req.file.originalname.endsWith('.xlsx') && !req.file.originalname.endsWith('.csv')) {
+        return res.status(400).json({ message: "Chỉ hỗ trợ file Excel (.xlsx) hoặc CSV" });
+      }
+
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      const data = XLSX.utils.sheet_to_json(sheet);
+
+      if (data.length === 0) {
+        return res.status(400).json({ message: "File không có dữ liệu" });
+      }
+
+      const drugs = data.map((row: any) => ({
+        tradeName: row['Tên thuốc'] || row['tradeName'] || '',
+        activeIngredient: row['Hoạt chất'] || row['activeIngredient'] || '',
+        strength: row['Hàm lượng'] || row['strength'] || '',
+        unit: row['Đơn vị'] || row['unit'] || '',
+        manufacturer: row['Nhà sản xuất'] || row['manufacturer'] || null,
+        notes: row['Ghi chú'] || row['notes'] || null,
+      })).filter((drug: any) => drug.tradeName && drug.activeIngredient);
+
+      if (drugs.length === 0) {
+        return res.status(400).json({ message: "Không tìm thấy dữ liệu hợp lệ trong file" });
+      }
+
+      const inserted = await storage.createDrugsBatch(drugs);
+      res.json({ 
+        message: `Đã import thành công ${inserted.length} thuốc`,
+        count: inserted.length 
+      });
+    } catch (error: any) {
+      console.error("[Drug Upload Error]", error);
+      res.status(500).json({ message: error.message || "Lỗi khi upload danh mục thuốc" });
+    }
+  });
+
+  app.post("/api/drugs", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const validated = insertDrugFormularySchema.parse(req.body);
+      const drug = await storage.createDrug(validated);
+      res.json(drug);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.put("/api/drugs/:id", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const drug = await storage.updateDrug(req.params.id, req.body);
+      if (!drug) {
+        return res.status(404).json({ message: "Không tìm thấy thuốc" });
+      }
+      res.json(drug);
+    } catch (error: any) {
+      res.status(400).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/drugs/:id", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      await storage.deleteDrug(req.params.id);
+      res.json({ message: "Đã xóa thuốc" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
     }
   });
 

@@ -7,7 +7,8 @@ import {
   evidence, type Evidence, type InsertEvidence,
   chatMessages, type ChatMessage, type InsertChatMessage,
   consultationReports, type ConsultationReport, type InsertConsultationReport,
-  uploadedFiles, type UploadedFile, type InsertUploadedFile
+  uploadedFiles, type UploadedFile, type InsertUploadedFile,
+  drugFormulary, type DrugFormulary, type InsertDrugFormulary
 } from "@shared/schema";
 import { eq, desc, and, or, sql, like } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -49,6 +50,13 @@ export interface IStorage {
   getUploadedFilesByCase(caseId: string, fileGroup?: string): Promise<UploadedFile[]>;
   createUploadedFile(file: InsertUploadedFile): Promise<UploadedFile>;
   deleteUploadedFile(id: string): Promise<void>;
+  
+  getAllDrugs(): Promise<DrugFormulary[]>;
+  searchDrugs(query: string): Promise<DrugFormulary[]>;
+  createDrug(drug: InsertDrugFormulary): Promise<DrugFormulary>;
+  createDrugsBatch(drugs: InsertDrugFormulary[]): Promise<DrugFormulary[]>;
+  updateDrug(id: string, drug: Partial<InsertDrugFormulary>): Promise<DrugFormulary | undefined>;
+  deleteDrug(id: string): Promise<void>;
 }
 
 export class PostgresStorage implements IStorage {
@@ -233,6 +241,44 @@ export class PostgresStorage implements IStorage {
 
   async deleteUploadedFile(id: string): Promise<void> {
     await db.delete(uploadedFiles).where(eq(uploadedFiles.id, id));
+  }
+
+  async getAllDrugs(): Promise<DrugFormulary[]> {
+    return db.select().from(drugFormulary).orderBy(drugFormulary.tradeName);
+  }
+
+  async searchDrugs(query: string): Promise<DrugFormulary[]> {
+    const searchPattern = `%${query}%`;
+    return db.select().from(drugFormulary)
+      .where(or(
+        like(drugFormulary.tradeName, searchPattern),
+        like(drugFormulary.activeIngredient, searchPattern),
+        like(drugFormulary.manufacturer, searchPattern)
+      ))
+      .orderBy(drugFormulary.tradeName);
+  }
+
+  async createDrug(drug: InsertDrugFormulary): Promise<DrugFormulary> {
+    const result = await db.insert(drugFormulary).values(drug).returning();
+    return result[0];
+  }
+
+  async createDrugsBatch(drugs: InsertDrugFormulary[]): Promise<DrugFormulary[]> {
+    if (drugs.length === 0) return [];
+    const result = await db.insert(drugFormulary).values(drugs).returning();
+    return result;
+  }
+
+  async updateDrug(id: string, drug: Partial<InsertDrugFormulary>): Promise<DrugFormulary | undefined> {
+    const result = await db.update(drugFormulary)
+      .set({ ...drug, updatedAt: new Date() })
+      .where(eq(drugFormulary.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteDrug(id: string): Promise<void> {
+    await db.delete(drugFormulary).where(eq(drugFormulary.id, id));
   }
 }
 
