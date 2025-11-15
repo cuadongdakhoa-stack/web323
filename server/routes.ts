@@ -19,7 +19,8 @@ import {
   medications,
   analyses,
   evidence,
-  uploadedFiles
+  uploadedFiles,
+  type Medication
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { 
@@ -43,6 +44,70 @@ import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+type MedicationStatus = "active" | "stopped" | "unknown";
+
+type MedicationWithStatus = Medication & {
+  status: MedicationStatus;
+};
+
+function getTodayInVietnam(): string {
+  const formatter = new Intl.DateTimeFormat('en-CA', { 
+    timeZone: 'Asia/Ho_Chi_Minh',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const parts = formatter.formatToParts(new Date());
+  const year = parts.find(p => p.type === 'year')?.value || '';
+  const month = parts.find(p => p.type === 'month')?.value || '';
+  const day = parts.find(p => p.type === 'day')?.value || '';
+  return `${year}-${month}-${day}`;
+}
+
+function extractDateString(input: Date | string | null | undefined): string | null {
+  if (!input) return null;
+  
+  try {
+    if (typeof input === 'string') {
+      const match = input.match(/^(\d{4}-\d{2}-\d{2})/);
+      return match ? match[1] : null;
+    } else {
+      const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: 'Asia/Ho_Chi_Minh',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+      const parts = formatter.formatToParts(input);
+      const year = parts.find(p => p.type === 'year')?.value || '';
+      const month = parts.find(p => p.type === 'month')?.value || '';
+      const day = parts.find(p => p.type === 'day')?.value || '';
+      return `${year}-${month}-${day}`;
+    }
+  } catch {
+    return null;
+  }
+}
+
+function computeMedicationStatus(medication: Medication): MedicationStatus {
+  const startDateStr = extractDateString(medication.usageStartDate);
+  const endDateStr = extractDateString(medication.usageEndDate);
+  
+  if (!startDateStr) return "unknown";
+  
+  const todayStr = getTodayInVietnam();
+  
+  if (startDateStr > todayStr) {
+    return "unknown";
+  }
+  
+  if (!endDateStr) {
+    return "active";
+  }
+  
+  return endDateStr >= todayStr ? "active" : "stopped";
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   const require = createRequire(import.meta.url);
@@ -609,7 +674,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const medications = await storage.getMedicationsByCase(req.params.id);
-      res.json(medications);
+      const medicationsWithStatus: MedicationWithStatus[] = medications.map(med => ({
+        ...med,
+        status: computeMedicationStatus(med)
+      }));
+      res.json(medicationsWithStatus);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }

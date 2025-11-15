@@ -91,6 +91,9 @@ export const insertMedicationSchema = createInsertSchema(medications).omit({
 });
 export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;
+export type MedicationWithStatus = Medication & {
+  status: "active" | "stopped" | "unknown";
+};
 
 export const analyses = pgTable("analyses", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),

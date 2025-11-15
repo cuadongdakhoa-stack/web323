@@ -17,6 +17,10 @@ import FileUploadSection from "@/components/FileUploadSection";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
+import type { Case, Medication, MedicationWithStatus, Analysis, Evidence, ConsultationReport } from "@shared/schema";
+import { reportContentSchema } from "@shared/schema";
+
+type ReportContent = z.infer<typeof reportContentSchema>;
 import {
   Table,
   TableBody,
@@ -49,24 +53,24 @@ export default function CaseDetail() {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState("");
   const [isEditingReport, setIsEditingReport] = useState(false);
-  const [editedReport, setEditedReport] = useState<any>(null);
+  const [editedReport, setEditedReport] = useState<ReportContent | null>(null);
   
-  const { data: caseData, isLoading } = useQuery({
+  const { data: caseData, isLoading } = useQuery<Case>({
     queryKey: ["/api/cases", id],
     enabled: !!id,
   });
 
-  const { data: medications, isLoading: medicationsLoading } = useQuery({
+  const { data: medications, isLoading: medicationsLoading } = useQuery<MedicationWithStatus[]>({
     queryKey: ["/api/cases", id, "medications"],
     enabled: !!id,
   });
 
-  const { data: analyses, isLoading: analysesLoading } = useQuery({
+  const { data: analyses, isLoading: analysesLoading } = useQuery<Analysis[]>({
     queryKey: ["/api/cases", id, "analyses"],
     enabled: !!id,
   });
 
-  const { data: evidence, isLoading: evidenceLoading } = useQuery({
+  const { data: evidence, isLoading: evidenceLoading } = useQuery<Evidence[]>({
     queryKey: ["/api/cases", id, "evidence"],
     enabled: !!id,
   });
@@ -126,7 +130,7 @@ export default function CaseDetail() {
     },
   });
 
-  const { data: report, isLoading: reportLoading } = useQuery({
+  const { data: report, isLoading: reportLoading } = useQuery<ConsultationReport | null>({
     queryKey: ["/api/cases", id, "consultation-report"],
     enabled: !!id,
   });
@@ -214,19 +218,20 @@ export default function CaseDetail() {
 
   useEffect(() => {
     if (isEditingReport && report?.reportContent) {
+      const content = report.reportContent as ReportContent;
       reportForm.reset({
-        pharmacistName: report.reportContent.pharmacistName || "",
-        clinicalAssessment: report.reportContent.clinicalAssessment || "",
-        recommendations: Array.isArray(report.reportContent.recommendations) 
-          ? report.reportContent.recommendations.join('\n') 
+        pharmacistName: content.pharmacistName || "",
+        clinicalAssessment: content.clinicalAssessment || "",
+        recommendations: Array.isArray(content.recommendations) 
+          ? content.recommendations.join('\n') 
           : "",
-        monitoring: Array.isArray(report.reportContent.monitoring)
-          ? report.reportContent.monitoring.join('\n')
+        monitoring: Array.isArray(content.monitoring)
+          ? content.monitoring.join('\n')
           : "",
-        patientEducation: Array.isArray(report.reportContent.patientEducation)
-          ? report.reportContent.patientEducation.join('\n')
+        patientEducation: Array.isArray(content.patientEducation)
+          ? content.patientEducation.join('\n')
           : "",
-        followUp: report.reportContent.followUp || "",
+        followUp: content.followUp || "",
       });
     }
   }, [isEditingReport, report]);
@@ -234,14 +239,16 @@ export default function CaseDetail() {
   const handleSaveReport = (values: z.infer<typeof reportFormSchema>) => {
     if (!report?.id) return;
 
-    const reportContent = {
-      ...report.reportContent,
+    const currentContent = (report.reportContent as ReportContent) || {};
+    const reportContent: ReportContent = {
+      ...currentContent,
       pharmacistName: values.pharmacistName,
       clinicalAssessment: values.clinicalAssessment,
       recommendations: values.recommendations.split('\n').map(r => r.trim()).filter(Boolean),
       monitoring: values.monitoring.split('\n').map(m => m.trim()).filter(Boolean),
       patientEducation: values.patientEducation.split('\n').map(p => p.trim()).filter(Boolean),
       followUp: values.followUp,
+      consultationDate: currentContent.consultationDate || new Date().toISOString(),
     };
 
     updateReportMutation.mutate({ reportId: report.id, reportContent });
@@ -271,6 +278,9 @@ export default function CaseDetail() {
       </div>
     );
   }
+
+  // Type-cast reportContent for safe access in JSX
+  const reportContent = report?.reportContent ? (report.reportContent as ReportContent) : null;
 
   return (
     <div className="p-8 max-w-7xl mx-auto">
@@ -414,22 +424,7 @@ export default function CaseDetail() {
                   </TableHeader>
                   <TableBody>
                     {medications.map((med: any) => {
-                      const today = new Date();
-                      today.setHours(0, 0, 0, 0);
-                      
-                      const startDate = med.usageStartDate ? new Date(med.usageStartDate) : null;
-                      const endDate = med.usageEndDate ? new Date(med.usageEndDate) : null;
-                      
-                      let status: "active" | "stopped" | "unknown" = "unknown";
-                      if (startDate && startDate <= today) {
-                        status = (!endDate || endDate >= today) ? "active" : "stopped";
-                      } else if (!startDate && !endDate) {
-                        status = "unknown";
-                      } else if (startDate && startDate > today) {
-                        status = "stopped";
-                      } else if (endDate && endDate < today) {
-                        status = "stopped";
-                      }
+                      const status = med.status || "unknown";
                       
                       return (
                         <TableRow key={med.id} data-testid={`row-medication-${med.id}`}>
@@ -915,7 +910,7 @@ export default function CaseDetail() {
                   <Skeleton className="h-24 w-full" />
                   <Skeleton className="h-24 w-full" />
                 </div>
-              ) : report && report.reportContent ? (
+              ) : report && reportContent ? (
                 isEditingReport ? (
                   <Form {...reportForm}>
                     <form onSubmit={reportForm.handleSubmit(handleSaveReport)} className="space-y-6" data-testid="report-edit-form">
@@ -1010,70 +1005,70 @@ export default function CaseDetail() {
                     <Alert>
                       <CheckCircle2 className="w-4 h-4" />
                       <AlertDescription>
-                        Phiếu tư vấn đã được phê duyệt vào {new Date(report.approvedAt).toLocaleString("vi-VN")}
+                        Phiếu tư vấn đã được phê duyệt vào {new Date(report.approvedAt!).toLocaleString("vi-VN")}
                       </AlertDescription>
                     </Alert>
                   )}
 
                   <div className="space-y-4">
-                    {report.reportContent.consultationDate && (
+                    {reportContent?.consultationDate && (
                       <div>
                         <h4 className="font-semibold text-sm text-muted-foreground mb-1">Ngày tư vấn</h4>
-                        <p>{new Date(report.reportContent.consultationDate).toLocaleDateString("vi-VN")}</p>
+                        <p>{new Date(reportContent.consultationDate).toLocaleDateString("vi-VN")}</p>
                       </div>
                     )}
 
-                    {report.reportContent.pharmacistName && (
+                    {reportContent?.pharmacistName && (
                       <div>
                         <h4 className="font-semibold text-sm text-muted-foreground mb-1">Dược sĩ phụ trách</h4>
-                        <p>{report.reportContent.pharmacistName}</p>
+                        <p>{reportContent.pharmacistName}</p>
                       </div>
                     )}
 
-                    {report.reportContent.clinicalAssessment && (
+                    {reportContent?.clinicalAssessment && (
                       <div>
                         <h4 className="font-semibold mb-2">Đánh giá lâm sàng</h4>
-                        <p className="text-sm whitespace-pre-wrap">{report.reportContent.clinicalAssessment}</p>
+                        <p className="text-sm whitespace-pre-wrap">{reportContent.clinicalAssessment}</p>
                       </div>
                     )}
 
-                    {report.reportContent.recommendations && report.reportContent.recommendations.length > 0 && (
+                    {reportContent?.recommendations && reportContent.recommendations.length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-2">Khuyến nghị</h4>
                         <ul className="list-disc list-inside space-y-1">
-                          {report.reportContent.recommendations.map((rec: string, idx: number) => (
+                          {reportContent.recommendations.map((rec: string, idx: number) => (
                             <li key={idx} className="text-sm">{rec}</li>
                           ))}
                         </ul>
                       </div>
                     )}
 
-                    {report.reportContent.monitoring && report.reportContent.monitoring.length > 0 && (
+                    {reportContent?.monitoring && reportContent.monitoring.length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-2">Theo dõi</h4>
                         <ul className="list-disc list-inside space-y-1">
-                          {report.reportContent.monitoring.map((item: string, idx: number) => (
+                          {reportContent.monitoring.map((item: string, idx: number) => (
                             <li key={idx} className="text-sm">{item}</li>
                           ))}
                         </ul>
                       </div>
                     )}
 
-                    {report.reportContent.patientEducation && report.reportContent.patientEducation.length > 0 && (
+                    {reportContent?.patientEducation && reportContent.patientEducation.length > 0 && (
                       <div>
                         <h4 className="font-semibold mb-2">Hướng dẫn bệnh nhân</h4>
                         <ul className="list-disc list-inside space-y-1">
-                          {report.reportContent.patientEducation.map((item: string, idx: number) => (
+                          {reportContent.patientEducation.map((item: string, idx: number) => (
                             <li key={idx} className="text-sm">{item}</li>
                           ))}
                         </ul>
                       </div>
                     )}
 
-                    {report.reportContent.followUp && (
+                    {reportContent?.followUp && (
                       <div>
                         <h4 className="font-semibold mb-2">Kế hoạch tái khám</h4>
-                        <p className="text-sm">{report.reportContent.followUp}</p>
+                        <p className="text-sm">{reportContent.followUp}</p>
                       </div>
                     )}
                   </div>
