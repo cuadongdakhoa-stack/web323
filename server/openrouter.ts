@@ -14,12 +14,10 @@ const extractedDataSchema = z.object({
   patientWeight: z.number().nullable().optional(),
   patientHeight: z.number().nullable().optional(),
   
-  // Chẩn đoán cấu trúc (ưu tiên)
+  // Chẩn đoán - CHỈ lấy chẩn đoán chính
   diagnosisMain: z.string().nullable().optional(),
-  diagnosisSecondary: z.array(z.string()).nullable().optional(),
   icdCodes: z.object({
     main: z.string().nullable().optional(),
-    secondary: z.array(z.string()).nullable().optional(),
   }).nullable().optional(),
   
   // Backward compatibility
@@ -27,7 +25,10 @@ const extractedDataSchema = z.object({
   
   medicalHistory: z.string().nullable().optional(),
   allergies: z.string().nullable().optional(),
-  labResults: z.record(z.any()).nullable().optional(),
+  labResults: z.object({
+    creatinine: z.number().nullable().optional(),
+    creatinineUnit: z.enum(["mg/dL", "micromol/L"]).nullable().optional(),
+  }).nullable().optional(),
   
   // Medications với ngày tháng
   medications: z.array(z.object({
@@ -819,9 +820,17 @@ export async function extractDataFromDocument(
 
 ${textContent}
 
-QUAN TRỌNG: 
-- Tách CHẨN ĐOÁN CHÍNH và CHẨN ĐOÁN PHỤ (nếu có)
+NGUYÊN TẮC QUAN TRỌNG NHẤT:
+⚠️ CHỈ TRÍCH XUẤT THÔNG TIN CÓ TRONG TÀI LIỆU - TUYỆT ĐỐI KHÔNG BỊA RA THÔNG TIN
+⚠️ Nếu không tìm thấy thông tin → trả về null (KHÔNG đoán, KHÔNG suy luận)
+
+HƯỚNG DẪN TRÍCH XUẤT:
+- CHỈ lấy CHẨN ĐOÁN CHÍNH (main diagnosis) - KHÔNG lấy chẩn đoán phụ
 - Tìm MÃ ICD-10 trong tài liệu (nếu có ghi rõ)
+- Creatinine huyết thanh: Hỗ trợ 2 đơn vị mg/dL và micromol/L (lấy đơn vị nào có trong tài liệu)
+  • Nếu thấy "Creatinine: 1.2 mg/dL" → creatinine: 1.2, creatinineUnit: "mg/dL"
+  • Nếu thấy "Creatinine: 106 micromol/L" → creatinine: 106, creatinineUnit: "micromol/L"
+  • Nếu không thấy → creatinine: null, creatinineUnit: null
 - Trích xuất NGÀY BẮT ĐẦU và NGÀY KẾT THÚC dùng thuốc (CHÚ Ý: nhiều format khác nhau)
 - Format ngày đầu ra: YYYY-MM-DD
 
@@ -852,7 +861,12 @@ VÍ DỤ ICD-10:
 - "I10: Tăng huyết áp" → diagnosisMain: "Tăng huyết áp", icdCodes.main: "I10"
 - "E11.9: Đái tháo đường type 2" → diagnosisMain: "Đái tháo đường type 2", icdCodes.main: "E11.9"
 
-JSON format (nếu thiếu thông tin thì để null):
+VÍ DỤ CREATININE:
+- "Creatinine: 1.2 mg/dL" → labResults: { creatinine: 1.2, creatinineUnit: "mg/dL" }
+- "SCr 106 micromol/L" → labResults: { creatinine: 106, creatinineUnit: "micromol/L" }
+- "Creatinine máu 0.9" → labResults: { creatinine: 0.9, creatinineUnit: "mg/dL" } (mặc định mg/dL nếu không ghi rõ)
+
+JSON format (⚠️ NẾU THIẾU THÔNG TIN THÌ ĐỂ null - KHÔNG BỊA):
 {
   "patientName": "string hoặc null",
   "patientAge": number hoặc null,
@@ -860,17 +874,18 @@ JSON format (nếu thiếu thông tin thì để null):
   "patientWeight": number hoặc null,
   "patientHeight": number hoặc null,
   
-  "diagnosisMain": "chẩn đoán bệnh chính",
-  "diagnosisSecondary": ["bệnh phụ 1", "bệnh phụ 2"] hoặc null,
+  "diagnosisMain": "CHỈ chẩn đoán bệnh CHÍNH - KHÔNG lấy bệnh phụ",
   "icdCodes": {
-    "main": "mã ICD chính (ví dụ: I10)",
-    "secondary": ["mã ICD phụ 1", "mã ICD phụ 2"]
+    "main": "mã ICD chính (ví dụ: I10) - CHỈ lấy mã chính"
   } hoặc null,
   
   "diagnosis": "nếu không tách được thì ghi chung ở đây",
   "medicalHistory": "string hoặc null",
   "allergies": "string hoặc null",
-  "labResults": {} hoặc null,
+  "labResults": {
+    "creatinine": number hoặc null,
+    "creatinineUnit": "mg/dL" hoặc "micromol/L" hoặc null
+  } hoặc null,
   
   "medications": [
     {
