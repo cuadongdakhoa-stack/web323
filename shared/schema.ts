@@ -223,3 +223,23 @@ export const insertUploadedFileSchema = createInsertSchema(uploadedFiles).omit({
 });
 export type InsertUploadedFile = z.infer<typeof insertUploadedFileSchema>;
 export type UploadedFile = typeof uploadedFiles.$inferSelect;
+
+export const drugFormulary = pgTable("drug_formulary", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  tradeName: text("trade_name").notNull(),
+  activeIngredient: text("active_ingredient").notNull(),
+  strength: text("strength").notNull(),
+  unit: text("unit").notNull(),
+  manufacturer: text("manufacturer"),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+});
+
+export const insertDrugFormularySchema = createInsertSchema(drugFormulary).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+export type InsertDrugFormulary = z.infer<typeof insertDrugFormularySchema>;
+export type DrugFormulary = typeof drugFormulary.$inferSelect;
