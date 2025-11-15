@@ -706,11 +706,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const medications = await storage.getMedicationsByCase(req.params.id);
+      
+      // Get drug formulary for context
+      const allDrugs = await storage.getAllDrugs();
 
       const analysisResult = await analyzePatientCase({
         ...caseData,
         medications,
-      });
+      }, allDrugs);
 
       const analysis = await storage.createAnalysis({
         caseId: req.params.id,

@@ -5,6 +5,7 @@ import {
   FileText,
   BookOpen,
   LogOut,
+  Pill,
 } from "lucide-react";
 import {
   Sidebar,
@@ -100,6 +101,27 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {userData?.user?.role === "admin" && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Quản trị</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={location === "/drug-formulary"}
+                    data-testid="link-drug-formulary"
+                  >
+                    <a href="/drug-formulary">
+                      <Pill className="w-5 h-5" />
+                      <span>Danh mục thuốc</span>
+                    </a>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
       </SidebarContent>
       <SidebarFooter className="border-t p-4">
         {userData?.user && (

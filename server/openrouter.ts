@@ -411,7 +411,7 @@ Lưu ý:
   };
 }
 
-export async function analyzePatientCase(caseData: any): Promise<any> {
+export async function analyzePatientCase(caseData: any, drugFormulary?: any[]): Promise<any> {
   const { groupMedicationsByDateOverlap } = await import('./medicationTimeline');
   
   const systemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp tại bệnh viện Việt Nam. Nhiệm vụ của bạn là phân tích ca bệnh và đưa ra khuyến nghị về điều chỉnh liều thuốc, tương tác thuốc, và các vấn đề liên quan.`;
@@ -419,24 +419,47 @@ export async function analyzePatientCase(caseData: any): Promise<any> {
   // Group medications by date overlap
   const medicationSegments = groupMedicationsByDateOverlap(caseData.medications || []);
   
+  // Build drug formulary lookup map
+  const drugLookup = new Map();
+  if (drugFormulary && drugFormulary.length > 0) {
+    drugFormulary.forEach((drug: any) => {
+      drugLookup.set(drug.tradeName.toLowerCase(), drug);
+    });
+  }
+
   // Build medication timeline section for prompt
   let medicationTimelineSection = '';
   if (medicationSegments.length > 0) {
     medicationTimelineSection = medicationSegments.map((segment, idx) => {
-      const medList = segment.medications.map((med: any, medIdx: number) => 
-        `   ${medIdx + 1}. ${med.drugName} - ${med.prescribedDose} ${med.prescribedRoute} ${med.prescribedFrequency}`
-      ).join('\n');
+      const medList = segment.medications.map((med: any, medIdx: number) => {
+        const formularyInfo = drugLookup.get(med.drugName.toLowerCase());
+        const drugInfo = formularyInfo 
+          ? `${med.drugName} (${formularyInfo.activeIngredient} ${formularyInfo.strength}${formularyInfo.unit})`
+          : med.drugName;
+        return `   ${medIdx + 1}. ${drugInfo} - ${med.prescribedDose} ${med.prescribedRoute} ${med.prescribedFrequency}`;
+      }).join('\n');
       
       return `Nhóm ${idx + 1} (${segment.rangeLabel}):\n${medList}\n   → CHỈ kiểm tra tương tác giữa các thuốc trong khoảng thời gian này, không xét thuốc ở nhóm khác.`;
     }).join('\n\n');
   } else {
     // Fallback to flat list if no grouping
-    medicationTimelineSection = caseData.medications?.map((med: any, idx: number) => `
-${idx + 1}. ${med.drugName}
+    medicationTimelineSection = caseData.medications?.map((med: any, idx: number) => {
+      const formularyInfo = drugLookup.get(med.drugName.toLowerCase());
+      const drugInfo = formularyInfo 
+        ? `${med.drugName} (${formularyInfo.activeIngredient} ${formularyInfo.strength}${formularyInfo.unit})`
+        : med.drugName;
+      return `
+${idx + 1}. ${drugInfo}
    - Chỉ định: ${med.indication || "Không rõ"}
    - Liều hiện tại: ${med.prescribedDose} ${med.prescribedRoute} ${med.prescribedFrequency}
-`).join("\n") || "Chưa có thuốc";
+`;
+    }).join("\n") || "Chưa có thuốc";
   }
+  
+  // Add formulary context note if available
+  const formularyNote = (drugFormulary && drugFormulary.length > 0)
+    ? `\n\nLƯU Ý: Hệ thống đã tra cứu ${drugFormulary.length} thuốc trong danh mục bệnh viện để bổ sung thông tin hoạt chất và hàm lượng chính xác.`
+    : '';
 
   const userPrompt = `Hãy phân tích ca bệnh sau và cung cấp đánh giá lâm sàng:
 
@@ -458,7 +481,7 @@ XÉT NGHIỆM: ${JSON.stringify(caseData.labResults || {}, null, 2)}
 eGFR: ${caseData.egfr || "Chưa tính"} ml/min/1.73m²
 
 DANH SÁCH THUỐC THEO THỜI GIAN SỬ DỤNG:
-${medicationTimelineSection}
+${medicationTimelineSection}${formularyNote}
 
 QUAN TRỌNG - QUY TẮC KIỂM TRA TƯƠNG TÁC THUỐC:
 ${medicationSegments.length > 0 

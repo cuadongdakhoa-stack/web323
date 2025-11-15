@@ -12,6 +12,7 @@ import Cases from "@/pages/cases";
 import NewCase from "@/pages/new-case";
 import CaseDetail from "@/pages/case-detail";
 import Library from "@/pages/library";
+import DrugFormulary from "@/pages/drug-formulary";
 import NotFound from "@/pages/not-found";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useEffect } from "react";
@@ -72,6 +73,7 @@ function AuthenticatedRouter() {
                 <Route path="/cases/new" component={NewCase} />
                 <Route path="/cases/:id" component={CaseDetail} />
                 <Route path="/library" component={Library} />
+                <Route path="/drug-formulary" component={DrugFormulary} />
                 <Route component={NotFound} />
               </Switch>
             </main>
