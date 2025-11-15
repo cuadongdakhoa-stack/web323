@@ -8,7 +8,8 @@ import {
   chatMessages, type ChatMessage, type InsertChatMessage,
   consultationReports, type ConsultationReport, type InsertConsultationReport,
   uploadedFiles, type UploadedFile, type InsertUploadedFile,
-  drugFormulary, type DrugFormulary, type InsertDrugFormulary
+  drugFormulary, type DrugFormulary, type InsertDrugFormulary,
+  referenceDocuments, type ReferenceDocument, type InsertReferenceDocument
 } from "@shared/schema";
 import { eq, desc, and, or, sql, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
@@ -57,6 +58,13 @@ export interface IStorage {
   createDrugsBatch(drugs: InsertDrugFormulary[]): Promise<DrugFormulary[]>;
   updateDrug(id: string, drug: Partial<InsertDrugFormulary>): Promise<DrugFormulary | undefined>;
   deleteDrug(id: string): Promise<void>;
+  
+  getAllReferenceDocuments(): Promise<ReferenceDocument[]>;
+  getReferenceDocumentsByCategory(category: string): Promise<ReferenceDocument[]>;
+  getReferenceDocument(id: string): Promise<ReferenceDocument | undefined>;
+  createReferenceDocument(doc: InsertReferenceDocument): Promise<ReferenceDocument>;
+  updateReferenceDocument(id: string, doc: Partial<InsertReferenceDocument>): Promise<ReferenceDocument | undefined>;
+  deleteReferenceDocument(id: string): Promise<void>;
 }
 
 export class PostgresStorage implements IStorage {
@@ -280,6 +288,38 @@ export class PostgresStorage implements IStorage {
 
   async deleteDrug(id: string): Promise<void> {
     await db.delete(drugFormulary).where(eq(drugFormulary.id, id));
+  }
+
+  async getAllReferenceDocuments(): Promise<ReferenceDocument[]> {
+    return db.select().from(referenceDocuments).orderBy(desc(referenceDocuments.createdAt));
+  }
+
+  async getReferenceDocumentsByCategory(category: string): Promise<ReferenceDocument[]> {
+    return db.select().from(referenceDocuments)
+      .where(eq(referenceDocuments.category, category))
+      .orderBy(desc(referenceDocuments.createdAt));
+  }
+
+  async getReferenceDocument(id: string): Promise<ReferenceDocument | undefined> {
+    const result = await db.select().from(referenceDocuments).where(eq(referenceDocuments.id, id)).limit(1);
+    return result[0];
+  }
+
+  async createReferenceDocument(doc: InsertReferenceDocument): Promise<ReferenceDocument> {
+    const result = await db.insert(referenceDocuments).values(doc).returning();
+    return result[0];
+  }
+
+  async updateReferenceDocument(id: string, doc: Partial<InsertReferenceDocument>): Promise<ReferenceDocument | undefined> {
+    const result = await db.update(referenceDocuments)
+      .set({ ...doc, updatedAt: new Date() })
+      .where(eq(referenceDocuments.id, id))
+      .returning();
+    return result[0];
+  }
+
+  async deleteReferenceDocument(id: string): Promise<void> {
+    await db.delete(referenceDocuments).where(eq(referenceDocuments.id, id));
   }
 }
 

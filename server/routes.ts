@@ -14,6 +14,7 @@ import {
   insertConsultationReportSchema,
   insertUploadedFileSchema,
   insertDrugFormularySchema,
+  insertReferenceDocumentSchema,
   reportContentSchema,
   analysisResultSchema,
   medications,
@@ -1569,6 +1570,171 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteDrug(req.params.id);
       res.json({ message: "Đã xóa thuốc" });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/library", requireAuth, async (req, res) => {
+    try {
+      const category = req.query.category as string | undefined;
+      const docs = category 
+        ? await storage.getReferenceDocumentsByCategory(category)
+        : await storage.getAllReferenceDocuments();
+      res.json(docs);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.get("/api/library/:id", requireAuth, async (req, res) => {
+    try {
+      const doc = await storage.getReferenceDocument(req.params.id);
+      if (!doc) {
+        return res.status(404).json({ message: "Không tìm thấy tài liệu tham khảo" });
+      }
+      res.json(doc);
+    } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  const uploadLibrary = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Chỉ chấp nhận file PDF hoặc DOCX'));
+      }
+    }
+  });
+
+  app.post("/api/library", requireAuth, uploadLibrary.single('file'), async (req, res) => {
+    let filePath: string | null = null;
+    
+    try {
+      const user = req.user!;
+      const file = req.file;
+      
+      if (!file) {
+        return res.status(400).json({ message: "Không có file nào được tải lên" });
+      }
+
+      const validated = insertReferenceDocumentSchema.parse({
+        title: req.body.title,
+        description: req.body.description || null,
+        category: req.body.category,
+        fileName: file.originalname,
+        fileType: path.extname(file.originalname).substring(1),
+        filePath: '',
+        fileSize: file.size,
+        mimeType: file.mimetype,
+        uploadedBy: user.id,
+        extractedText: null
+      });
+
+      const libraryDir = path.resolve(uploadsDir, 'library');
+      if (!fs.existsSync(libraryDir)) {
+        fs.mkdirSync(libraryDir, { recursive: true });
+      }
+
+      const fileExtension = path.extname(file.originalname);
+      const uniqueFilename = `${Date.now()}-${Math.random().toString(36).substring(7)}${fileExtension}`;
+      filePath = path.resolve(libraryDir, uniqueFilename);
+      
+      if (!filePath.startsWith(libraryDir)) {
+        return res.status(400).json({ message: "Invalid file path" });
+      }
+      
+      fs.writeFileSync(filePath, file.buffer);
+
+      const relativePath = path.join('uploads', 'library', uniqueFilename);
+      
+      let extractedText = '';
+      let extractionFailed = false;
+      try {
+        if (file.mimetype === 'application/pdf') {
+          const data = new Uint8Array(file.buffer);
+          const loadingTask = pdfjsLib.getDocument({ data });
+          const pdfDocument = await loadingTask.promise;
+          
+          const textParts = [];
+          for (let i = 1; i <= pdfDocument.numPages; i++) {
+            const page = await pdfDocument.getPage(i);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map((item: any) => item.str).join(' ');
+            textParts.push(pageText);
+          }
+          extractedText = textParts.join('\n\n');
+        } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          const result = await mammoth.extractRawText({ buffer: file.buffer });
+          extractedText = result.value;
+        }
+        
+        if (!extractedText || extractedText.trim().length === 0) {
+          extractionFailed = true;
+        }
+      } catch (extractError) {
+        console.error('[Text Extraction Error]', extractError);
+        extractionFailed = true;
+      }
+      
+      if (extractionFailed) {
+        if (filePath && fs.existsSync(filePath)) {
+          fs.unlinkSync(filePath);
+        }
+        return res.status(422).json({ 
+          message: "Không thể trích xuất văn bản từ file. Vui lòng kiểm tra file có nội dung văn bản." 
+        });
+      }
+      
+      const doc = await storage.createReferenceDocument({
+        ...validated,
+        filePath: relativePath,
+        extractedText
+      });
+
+      res.status(201).json(doc);
+    } catch (error: any) {
+      if (filePath && fs.existsSync(filePath)) {
+        try {
+          fs.unlinkSync(filePath);
+        } catch (cleanupError) {
+          console.error('[File Cleanup Error]', cleanupError);
+        }
+      }
+      
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ message: "Dữ liệu không hợp lệ", errors: error.errors });
+      }
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  app.delete("/api/library/:id", requireAuth, requireRole("admin"), async (req, res) => {
+    try {
+      const doc = await storage.getReferenceDocument(req.params.id);
+      if (!doc) {
+        return res.status(404).json({ message: "Không tìm thấy tài liệu tham khảo" });
+      }
+
+      try {
+        const fullPath = path.resolve(__dirname, '..', doc.filePath);
+        if (fs.existsSync(fullPath)) {
+          fs.unlinkSync(fullPath);
+        }
+      } catch (fileError) {
+        console.error('[File Delete Error]', fileError);
+      }
+
+      await storage.deleteReferenceDocument(req.params.id);
+      res.json({ message: "Đã xóa tài liệu tham khảo" });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
     }
