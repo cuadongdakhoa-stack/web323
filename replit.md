@@ -47,6 +47,7 @@ The application follows a client-server architecture.
 - **Multi-file Upload**: Supports uploading up to 10 files (PDF, DOCX, JPG, PNG) per case, with duplicate prevention and partial failure handling.
 - **Structured Diagnosis**: Integrates ICD-10 codes for main and secondary diagnoses, with AI extraction support.
 - **Medication Timeline**: Tracks usage start/end dates for medications, enabling **timeline-based drug interaction checks**. Implementation uses sweep-line algorithm (`server/medicationTimeline.ts`) to group medications by overlapping date ranges, ensuring AI only checks interactions between drugs used simultaneously. **Key features**: (1) Start date required for new medications to ensure data quality, (2) Backward-compatible handling of legacy medications without dates via conservative fallback strategies, (3) Three-case fallback logic: catch-all segment for mixed/undated medications, warning segments for undated entries, and general interaction review for sequential non-overlapping medications. This prevents false-negative interaction alerts while respecting actual medication timelines during hospital stays with changing regimens.
+- **Drug Formulary Management**: Hospital-specific drug database with trade names, active ingredients, strengths, units, and manufacturers. **Admin-only upload** via Excel/CSV (supports both Vietnamese and English column headers). **Features**: (1) Case-insensitive search (`ilike`) for Vietnamese drug names, (2) AI integration: formulary data automatically enriches medication context in clinical analysis prompts, (3) Row-level validation with Zod schema prevents data corruption, (4) Nullish coalescing preserves zero-strength values during import, (5) Read access for all authenticated users, write access restricted to admin role. Implementation in `server/storage.ts`, `server/routes.ts`, and `client/src/pages/drug-formulary.tsx`.
 
 ## External Dependencies
 
@@ -74,6 +75,7 @@ The application follows a client-server architecture.
     - Zod (for validation)
     - PDFKit (PDF generation with Vietnamese font support)
     - docx (DOCX generation)
+    - xlsx (Excel/CSV parsing for drug formulary import)
 - **Fonts**: 
     - Google Fonts (Inter) - UI typography
     - Noto Sans (Regular + Bold TTF) - Vietnamese PDF export support
