@@ -67,6 +67,7 @@ export default function NewCase() {
     patientWeight: "",
     patientHeight: "",
     creatinine: "",
+    creatinineUnit: "mg/dL",
     admissionDate: new Date().toISOString().split('T')[0],
     diagnosisMain: "",
     diagnosisMainIcd: "",
@@ -330,6 +331,7 @@ export default function NewCase() {
           patientWeight: data.caseData.patientWeight ? parseFloat(data.caseData.patientWeight) : null,
           patientHeight: data.caseData.patientHeight ? parseFloat(data.caseData.patientHeight) : null,
           creatinine: data.caseData.creatinine ? parseFloat(data.caseData.creatinine) : null,
+          creatinineUnit: data.caseData.creatinineUnit || "mg/dL",
           labResults: {},
         }),
       });
@@ -548,22 +550,37 @@ export default function NewCase() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="creatinine">Creatinine huyết thanh (mg/dL)</Label>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="space-y-2 md:col-span-2">
+                    <Label htmlFor="creatinine">Creatinine huyết thanh</Label>
                     <Input
                       id="creatinine"
                       data-testid="input-creatinine"
                       type="number"
                       step="0.01"
-                      placeholder="Ví dụ: 1.2"
+                      placeholder="Ví dụ: 1.2 hoặc 106"
                       value={formData.creatinine}
                       onChange={(e) => handleChange("creatinine", e.target.value)}
                     />
                   </div>
-                  <div className="col-span-2 flex items-end">
+                  <div className="space-y-2">
+                    <Label htmlFor="creatinineUnit">Đơn vị</Label>
+                    <Select
+                      value={formData.creatinineUnit}
+                      onValueChange={(value) => handleChange("creatinineUnit", value)}
+                    >
+                      <SelectTrigger id="creatinineUnit" data-testid="select-creatinine-unit">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="mg/dL">mg/dL</SelectItem>
+                        <SelectItem value="micromol/L">micromol/L</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="flex items-end">
                     <p className="text-sm text-muted-foreground">
-                      eGFR sẽ tự động tính toán theo công thức CKD-EPI khi nhập creatinine
+                      eGFR tự động tính theo CKD-EPI
                     </p>
                   </div>
                 </div>

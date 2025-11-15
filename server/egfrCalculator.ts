@@ -4,7 +4,8 @@
  */
 
 interface EGFRInput {
-  creatinine: number; // mg/dL
+  creatinine: number; // mg/dL or micromol/L (will be converted)
+  creatinineUnit?: string; // "mg/dL" or "micromol/L"
   age: number; // years
   gender: string; // "Nam" or "Nữ"
 }
@@ -17,34 +18,42 @@ interface EGFRResult {
 
 /**
  * Calculate eGFR using CKD-EPI formula (2021)
+ * Supports both mg/dL and micromol/L units for creatinine
  */
 export function calculateEGFR(input: EGFRInput): EGFRResult | null {
-  const { creatinine, age, gender } = input;
+  const { creatinine, creatinineUnit = "mg/dL", age, gender } = input;
 
   // Validate inputs
   if (!creatinine || creatinine <= 0 || !age || age <= 0 || !gender) {
     return null;
   }
 
+  // Convert micromol/L to mg/dL if needed
+  // Conversion factor: 1 mg/dL = 88.4 micromol/L
+  let creatinineInMgDL = creatinine;
+  if (creatinineUnit === "micromol/L") {
+    creatinineInMgDL = creatinine / 88.4;
+  }
+
   let egfr: number;
 
-  // CKD-EPI formula based on gender
+  // CKD-EPI formula based on gender (using converted mg/dL value)
   if (gender === "Nữ" || gender.toLowerCase() === "female") {
-    if (creatinine <= 0.7) {
+    if (creatinineInMgDL <= 0.7) {
       // Female, SCr ≤ 0.7
-      egfr = 144 * Math.pow(creatinine / 0.7, -0.329) * Math.pow(0.993, age);
+      egfr = 144 * Math.pow(creatinineInMgDL / 0.7, -0.329) * Math.pow(0.993, age);
     } else {
       // Female, SCr > 0.7
-      egfr = 144 * Math.pow(creatinine / 0.7, -1.209) * Math.pow(0.993, age);
+      egfr = 144 * Math.pow(creatinineInMgDL / 0.7, -1.209) * Math.pow(0.993, age);
     }
   } else {
     // Male
-    if (creatinine <= 0.9) {
+    if (creatinineInMgDL <= 0.9) {
       // Male, SCr ≤ 0.9
-      egfr = 141 * Math.pow(creatinine / 0.9, -0.411) * Math.pow(0.993, age);
+      egfr = 141 * Math.pow(creatinineInMgDL / 0.9, -0.411) * Math.pow(0.993, age);
     } else {
       // Male, SCr > 0.9
-      egfr = 141 * Math.pow(creatinine / 0.9, -1.209) * Math.pow(0.993, age);
+      egfr = 141 * Math.pow(creatinineInMgDL / 0.9, -1.209) * Math.pow(0.993, age);
     }
   }
 

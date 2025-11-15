@@ -37,6 +37,7 @@ export const cases = pgTable("cases", {
   allergies: text("allergies"),
   labResults: jsonb("lab_results"),
   creatinine: real("creatinine"),
+  creatinineUnit: text("creatinine_unit").default("mg/dL"),
   egfr: real("egfr"),
   egfrCategory: text("egfr_category"),
   renalFunction: text("renal_function"),

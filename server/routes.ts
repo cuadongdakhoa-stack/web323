@@ -318,6 +318,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (validatedData.creatinine !== undefined && validatedData.creatinine !== null && validatedData.patientAge && validatedData.patientGender) {
         const egfrResult = calculateEGFR({
           creatinine: validatedData.creatinine,
+          creatinineUnit: validatedData.creatinineUnit || "mg/dL",
           age: validatedData.patientAge,
           gender: validatedData.patientGender,
         });
@@ -353,12 +354,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Auto-calculate eGFR if creatinine, age, and gender are available
       // Use updated values if provided, otherwise fall back to existing case data
       const creatinine = validatedData.creatinine ?? caseData.creatinine;
+      const creatinineUnit = validatedData.creatinineUnit ?? caseData.creatinineUnit ?? "mg/dL";
       const age = validatedData.patientAge ?? caseData.patientAge;
       const gender = validatedData.patientGender ?? caseData.patientGender;
       
       if (creatinine !== undefined && creatinine !== null && age && gender) {
         const egfrResult = calculateEGFR({
           creatinine,
+          creatinineUnit,
           age,
           gender,
         });
