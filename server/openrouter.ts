@@ -799,12 +799,35 @@ ${textContent}
 QUAN TRỌNG: 
 - Tách CHẨN ĐOÁN CHÍNH và CHẨN ĐOÁN PHỤ (nếu có)
 - Tìm MÃ ICD-10 trong tài liệu (nếu có ghi rõ)
-- Trích xuất NGÀY BẮT ĐẦU và NGÀY KẾT THÚC dùng thuốc (nếu có)
-- Format ngày: YYYY-MM-DD
+- Trích xuất NGÀY BẮT ĐẦU và NGÀY KẾT THÚC dùng thuốc (CHÚ Ý: nhiều format khác nhau)
+- Format ngày đầu ra: YYYY-MM-DD
 
-VÍ DỤ:
-- Nếu ghi "Ngày 1-3/1/2024: Paracetamol" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
-- Nếu ghi "I10: Tăng huyết áp" → diagnosisMain: "Tăng huyết áp", icdCodes.main: "I10"
+VÍ DỤ NHẬN DIỆN NGÀY THÁNG (rất quan trọng):
+1. Khoảng ngày rõ ràng:
+   - "Ngày 1-3/1/2024: Paracetamol" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
+   - "01/01/2024 - 05/01/2024: Amoxicillin" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-05"
+   - "Từ 15/01 đến 20/01/2024" → usageStartDate: "2024-01-15", usageEndDate: "2024-01-20"
+
+2. Nhiều ngày liên tiếp (parse ALL dates):
+   - "Ngày 1,2,3/1/2024: Ceftriaxone" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
+   - "01, 02, 03/01/2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
+   - "Ngày 5, 6, 7, 8/12/2023" → usageStartDate: "2023-12-05", usageEndDate: "2023-12-08"
+
+3. Ngày không liên tiếp (lấy ngày đầu và cuối):
+   - "Ngày 1, 3, 5/1/2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-05"
+   - "Ngày 10, 15, 20/02/2024" → usageStartDate: "2024-02-10", usageEndDate: "2024-02-20"
+
+4. Format khác:
+   - "Dùng từ 01-01-2024 đến 10-01-2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-10"
+   - "Ngày nhập viện 05/01/2024, dùng 7 ngày" → usageStartDate: "2024-01-05", usageEndDate: "2024-01-12"
+
+5. Chỉ có 1 ngày hoặc không có ngày:
+   - "Ngày 15/01/2024: Aspirin" → usageStartDate: "2024-01-15", usageEndDate: null
+   - "Aspirin 500mg" (không có ngày) → usageStartDate: null, usageEndDate: null
+
+VÍ DỤ ICD-10:
+- "I10: Tăng huyết áp" → diagnosisMain: "Tăng huyết áp", icdCodes.main: "I10"
+- "E11.9: Đái tháo đường type 2" → diagnosisMain: "Đái tháo đường type 2", icdCodes.main: "E11.9"
 
 JSON format (nếu thiếu thông tin thì để null):
 {
