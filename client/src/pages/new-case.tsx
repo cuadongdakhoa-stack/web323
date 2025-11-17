@@ -693,7 +693,7 @@ export default function NewCase() {
                   </div>
                   <div className="flex items-end">
                     <p className="text-sm text-muted-foreground">
-                      eGFR tự động tính theo CKD-EPI
+                      CrCl tự động tính theo Cockcroft-Gault
                     </p>
                   </div>
                 </div>
