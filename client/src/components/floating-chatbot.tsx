@@ -182,8 +182,8 @@ export function FloatingChatbot() {
               </div>
             </CardHeader>
 
-            <CardContent className="flex-1 flex flex-col p-0">
-              <ScrollArea className="flex-1 p-4" ref={scrollRef}>
+            <CardContent className="flex-1 flex flex-col p-0 min-h-0">
+              <ScrollArea className="flex-1 p-4 min-h-0" ref={scrollRef}>
                 {loadingHistory ? (
                   <div className="flex flex-col items-center justify-center h-full gap-3">
                     <Loader2 className="w-6 h-6 animate-spin text-primary" />
@@ -315,7 +315,7 @@ export function FloatingChatbot() {
                 )}
               </ScrollArea>
 
-              <div className="border-t p-4">
+              <div className="border-t p-4 flex-shrink-0">
                 <form
                   onSubmit={(e) => {
                     e.preventDefault();
