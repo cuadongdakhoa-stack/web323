@@ -378,7 +378,7 @@ export default function CaseDetail() {
                 <p className="text-sm font-medium text-muted-foreground">Creatinine</p>
                 <p className="text-base" data-testid="text-creatinine">
                   {caseData.creatinine 
-                    ? `${caseData.creatinine} ${caseData.creatinineUnit === "micromol/L" ? "µmol/l" : (caseData.creatinineUnit || "mg/dL")}` 
+                    ? `${caseData.creatinine} ${caseData.creatinineUnit || "mg/dL"}` 
                     : "Chưa có"}
                 </p>
               </div>

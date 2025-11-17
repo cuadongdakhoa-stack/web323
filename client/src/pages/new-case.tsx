@@ -687,7 +687,7 @@ export default function NewCase() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="mg/dL">mg/dL</SelectItem>
-                        <SelectItem value="micromol/L">µmol/l</SelectItem>
+                        <SelectItem value="micromol/L">micromol/L</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
