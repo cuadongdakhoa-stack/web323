@@ -527,7 +527,7 @@ export default function NewCase() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="patientWeight">Cân nặng (kg)</Label>
+                    <Label htmlFor="patientWeight">Cân nặng (kg) <span className="text-destructive">*</span></Label>
                     <Input
                       id="patientWeight"
                       data-testid="input-patient-weight"
@@ -535,6 +535,7 @@ export default function NewCase() {
                       step="0.1"
                       value={formData.patientWeight}
                       onChange={(e) => handleChange("patientWeight", e.target.value)}
+                      required
                     />
                   </div>
                   <div className="space-y-2">

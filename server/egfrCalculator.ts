@@ -1,6 +1,6 @@
 /**
- * eGFR Calculator using CKD-EPI formula (2021 version without race)
- * Based on serum creatinine, age, and gender
+ * eGFR Calculator using Cockcroft-Gault formula
+ * Based on serum creatinine, age, gender, and weight
  */
 
 interface EGFRInput {
@@ -8,53 +8,57 @@ interface EGFRInput {
   creatinineUnit?: string; // "mg/dL" or "micromol/L"
   age: number; // years
   gender: string; // "Nam" or "Nữ"
+  weight?: number; // kg (optional - uses assumed value if not provided)
 }
 
 interface EGFRResult {
-  egfr: number; // mL/min/1.73m²
+  egfr: number; // mL/min (Cockcroft-Gault returns CrCl, not normalized to BSA)
   egfrCategory: string; // G1-G5
   renalFunction: string; // Vietnamese description
 }
 
 /**
- * Calculate eGFR using CKD-EPI formula (2021)
+ * Calculate eGFR using Cockcroft-Gault formula
  * Supports both mg/dL and micromol/L units for creatinine
+ * Formula:
+ *   Males: CrCl = ((140 - age) × weight) / (72 × SCr)
+ *   Females: CrCl = ((140 - age) × weight × 0.85) / (72 × SCr)
+ * Where SCr is in mg/dL
+ * 
+ * IMPORTANT: Weight is REQUIRED and must be a positive number.
+ * Returns null if weight is missing or ≤0 (no silent defaults for clinical safety).
  */
 export function calculateEGFR(input: EGFRInput): EGFRResult | null {
-  const { creatinine, creatinineUnit = "mg/dL", age, gender } = input;
+  const { creatinine, creatinineUnit = "mg/dL", age, gender, weight: providedWeight } = input;
 
-  // Validate inputs
+  // Validate required inputs
   if (!creatinine || creatinine <= 0 || !age || age <= 0 || !gender) {
     return null;
   }
 
+  // Validate weight - reject if missing or non-positive (fail fast, no silent defaults)
+  if (!providedWeight || providedWeight <= 0) {
+    return null;
+  }
+
+  const weight = providedWeight;
+
   // Convert micromol/L to mg/dL if needed
-  // Conversion factor: 1 mg/dL = 88.4 micromol/L
+  // Conversion factor: 1 mg/dL = 88.42 micromol/L
   let creatinineInMgDL = creatinine;
   if (creatinineUnit === "micromol/L") {
-    creatinineInMgDL = creatinine / 88.4;
+    creatinineInMgDL = creatinine / 88.42;
   }
 
   let egfr: number;
 
-  // CKD-EPI formula based on gender (using converted mg/dL value)
+  // Cockcroft-Gault formula based on gender (using converted mg/dL value)
   if (gender === "Nữ" || gender.toLowerCase() === "female") {
-    if (creatinineInMgDL <= 0.7) {
-      // Female, SCr ≤ 0.7
-      egfr = 144 * Math.pow(creatinineInMgDL / 0.7, -0.329) * Math.pow(0.993, age);
-    } else {
-      // Female, SCr > 0.7
-      egfr = 144 * Math.pow(creatinineInMgDL / 0.7, -1.209) * Math.pow(0.993, age);
-    }
+    // Female: CrCl = ((140 - age) × weight × 0.85) / (72 × SCr)
+    egfr = ((140 - age) * weight * 0.85) / (72 * creatinineInMgDL);
   } else {
-    // Male
-    if (creatinineInMgDL <= 0.9) {
-      // Male, SCr ≤ 0.9
-      egfr = 141 * Math.pow(creatinineInMgDL / 0.9, -0.411) * Math.pow(0.993, age);
-    } else {
-      // Male, SCr > 0.9
-      egfr = 141 * Math.pow(creatinineInMgDL / 0.9, -1.209) * Math.pow(0.993, age);
-    }
+    // Male: CrCl = ((140 - age) × weight) / (72 × SCr)
+    egfr = ((140 - age) * weight) / (72 * creatinineInMgDL);
   }
 
   // Round to 1 decimal place

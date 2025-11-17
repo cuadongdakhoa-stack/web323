@@ -314,13 +314,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         admissionDate: new Date(req.body.admissionDate),
       });
       
-      // Auto-calculate eGFR if creatinine, age, and gender are provided
-      if (validatedData.creatinine !== undefined && validatedData.creatinine !== null && validatedData.patientAge && validatedData.patientGender) {
+      // Auto-calculate eGFR if creatinine, age, gender, and weight are provided
+      // Weight is REQUIRED for Cockcroft-Gault - no calculation if missing
+      if (validatedData.creatinine !== undefined && validatedData.creatinine !== null && validatedData.patientAge && validatedData.patientGender && validatedData.patientWeight && validatedData.patientWeight > 0) {
         const egfrResult = calculateEGFR({
           creatinine: validatedData.creatinine,
           creatinineUnit: validatedData.creatinineUnit || "mg/dL",
           age: validatedData.patientAge,
           gender: validatedData.patientGender,
+          weight: validatedData.patientWeight ?? undefined,
         });
         
         if (egfrResult) {
@@ -351,19 +353,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const validatedData = insertCaseSchema.partial().omit({ userId: true }).parse(req.body);
       
-      // Auto-calculate eGFR if creatinine, age, and gender are available
+      // Auto-calculate eGFR if creatinine, age, gender, and weight are available
       // Use updated values if provided, otherwise fall back to existing case data
+      // Weight is REQUIRED for Cockcroft-Gault - skip calculation if missing or invalid
       const creatinine = validatedData.creatinine ?? caseData.creatinine;
       const creatinineUnit = validatedData.creatinineUnit ?? caseData.creatinineUnit ?? "mg/dL";
       const age = validatedData.patientAge ?? caseData.patientAge;
       const gender = validatedData.patientGender ?? caseData.patientGender;
+      const weight = validatedData.patientWeight ?? caseData.patientWeight;
       
-      if (creatinine !== undefined && creatinine !== null && age && gender) {
+      // Skip eGFR calculation for legacy cases with null age/gender or missing/invalid weight
+      if (creatinine !== undefined && creatinine !== null && age && age > 0 && gender && weight && weight > 0) {
         const egfrResult = calculateEGFR({
           creatinine,
           creatinineUnit,
           age,
           gender,
+          weight: weight ?? undefined,
         });
         
         if (egfrResult) {
@@ -1099,7 +1105,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const pdfBuffer = await generatePDF(report, caseData);
       
-      const patientName = (caseData.name || 'benh-nhan').replace(/\s+/g, '-');
+      const patientName = (caseData.patientName || 'benh-nhan').replace(/\s+/g, '-');
       const fileName = `phieu-tu-van-${patientName}-${new Date().toISOString().split('T')[0]}.pdf`;
       
       res.setHeader('Content-Type', 'application/pdf');
@@ -1125,7 +1131,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const docxBuffer = await generateDOCX(report, caseData);
       
-      const patientName = (caseData.name || 'benh-nhan').replace(/\s+/g, '-');
+      const patientName = (caseData.patientName || 'benh-nhan').replace(/\s+/g, '-');
       const fileName = `phieu-tu-van-${patientName}-${new Date().toISOString().split('T')[0]}.docx`;
       
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
@@ -1326,7 +1332,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           query,
           title: "Kết quả tìm kiếm bằng chứng",
           source: "Perplexity AI",
-          summary: result,
+          summary: Array.isArray(result) ? result.join('\n') : String(result),
           verificationStatus: "pending",
         });
       }
@@ -1420,8 +1426,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const previousMessages = await storage.getChatMessagesByUser(user.id, caseId);
       context.previousMessages = previousMessages.slice(-10).map(m => ({
-        role: m.role,
-        content: m.content,
+        role: "user",
+        content: m.message,
       }));
 
       const aiResponse = await chatWithAI(message, context);
@@ -1429,16 +1435,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.createChatMessage({
         userId: user.id,
         caseId: caseId || null,
-        role: "user",
-        content: message,
+        message: message,
+        response: "",
       });
 
       const aiMessage = await storage.createChatMessage({
         userId: user.id,
         caseId: caseId || null,
-        role: "assistant",
-        content: aiResponse,
-        model: "deepseek-chat",
+        message: "",
+        response: aiResponse,
       });
 
       res.json({ message: aiMessage, response: aiResponse });
