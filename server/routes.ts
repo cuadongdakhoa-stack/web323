@@ -1106,8 +1106,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
 
+      const systemStats = await storage.getSystemStatistics();
+
       const aiResponse = await chatWithAI(userMessage, {
         caseData,
+        systemStats,
       });
 
       const validatedData = insertChatMessageSchema.parse({
@@ -1475,6 +1478,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         role: "user",
         content: m.message,
       }));
+
+      const systemStats = await storage.getSystemStatistics();
+      context.systemStats = systemStats;
 
       const aiResponse = await chatWithAI(message, context);
 

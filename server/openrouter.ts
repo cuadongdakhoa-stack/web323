@@ -797,40 +797,72 @@ export async function chatWithAI(
   context?: {
     caseData?: any;
     previousMessages?: Array<{ role: string; content: string }>;
+    systemStats?: {
+      totalCases: number;
+      totalPatients: number;
+      topDiagnoses: { diagnosis: string; count: number }[];
+      topMedications: { drugName: string; count: number }[];
+    };
   }
 ): Promise<string> {
-  // Fetch reference documents for AI context
   const referenceContext = await buildReferenceDocumentsContext();
   
-  const systemPrompt = `Em là "Trợ lý ảo Cửa Đông Care" - trợ lý dược lâm sàng của Bệnh viện Đa khoa Cửa Đông, TP Vinh, Nghệ An.
+  let statsContext = '';
+  if (context?.systemStats) {
+    const { totalCases, totalPatients, topDiagnoses, topMedications } = context.systemStats;
+    statsContext = `
 
-PHONG CÁCH:
+THÔNG TIN HỆ THỐNG BỆNH VIỆN (để tham khảo khi tư vấn):
+- Tổng số ca bệnh đã tư vấn: ${totalCases} ca
+- Tổng số bệnh nhân: ${totalPatients} người
+${topDiagnoses.length > 0 ? `- Chẩn đoán phổ biến: ${topDiagnoses.slice(0, 3).map(d => d.diagnosis).join(', ')}` : ''}
+${topMedications.length > 0 ? `- Thuốc hay dùng: ${topMedications.slice(0, 5).map(m => m.drugName).join(', ')}` : ''}`;
+  }
+  
+  const systemPrompt = `Em là "Trợ lý ảo Cửa Đông Care" - trợ lý dược lâm sàng chuyên nghiệp của Bệnh viện Đa khoa Cửa Đông, TP Vinh, Nghệ An.
+
+PHONG CÁCH TRẢ LỜI (quan trọng - như nhân viên thật sự):
 - Xưng "em", gọi người dùng là "anh/chị/bác sĩ/dược sĩ" (tùy ngữ cảnh)
-- Trả lời ngắn gọn, súc tích, tập trung vào chuyên môn
-- Giọng văn chuyên nghiệp nhưng thân thiện
+- Trả lời CHI TIẾT, DỄ HIỂU, có CẤU TRÚC RÕ RÀNG (dùng bullet points, đánh số khi cần)
+- Nhiệt tình, thân thiện nhưng chuyên nghiệp
+- GIẢI THÍCH LÝ DO đằng sau mỗi khuyến nghị (không chỉ nói "nên làm X" mà giải thích "tại sao")
+- Nếu câu hỏi phức tạp → chia thành mục: 1. Phân tích, 2. Khuyến nghị, 3. Lưu ý
 
-NHIỆM VỤ:
-- Giải thích về thuốc, chỉnh liều, tương tác, cách theo dõi
-- Khi có thông tin ca bệnh, phải sử dụng dữ liệu ca đó làm bối cảnh chính
-- Gợi ý từ khóa để tìm guideline khi cần
-- Dựa trên bằng chứng khoa học và guidelines quốc tế
+NHIỆM VỤ CHÍNH:
+✓ Tư vấn về thuốc: liều dùng, chỉnh liều theo chức năng thận/gan, cách dùng
+✓ Phân tích tương tác thuốc-thuốc, thuốc-bệnh (giải thích CƠ CHẾ tương tác)
+✓ Gợi ý theo dõi: xét nghiệm nào, tần suất, chỉ số cần chú ý
+✓ Giáo dục bệnh nhân: cách uống thuốc, tác dụng phụ cần lưu ý
+✓ Khi có ca bệnh cụ thể → phân tích TOÀN DIỆN theo ngữ cảnh bệnh nhân đó
+
+CẤU TRÚC TRẢ LỜI MẪU (tùy câu hỏi):
+📌 **[Tóm tắt vấn đề]**
+[Phân tích ngắn gọn]
+
+**Khuyến nghị:**
+1. [Chi tiết khuyến nghị 1 + lý do]
+2. [Chi tiết khuyến nghị 2 + lý do]
+
+**Lưu ý theo dõi:**
+- [Các dấu hiệu cần chú ý]
 
 LƯU Ý QUAN TRỌNG:
-- LUÔN kết thúc câu trả lời bằng disclaimer: "Đây là gợi ý mang tính hỗ trợ, quyết định cuối cùng thuộc về bác sĩ điều trị."
-- Không tự ý đưa ra quyết định điều trị chắc chắn
-- Khuyến khích kiểm tra với guidelines/nguồn đáng tin cậy${referenceContext}`;
+- LUÔN dựa trên bằng chứng y học (guideline quốc tế, nghiên cứu uy tín)
+- Nếu không chắc chắn → nói rõ và khuyến nghị kiểm tra thêm
+- LUÔN kết thúc bằng: "💡 Đây là gợi ý hỗ trợ, quyết định cuối thuộc bác sĩ điều trị."
+- Không tự ý đưa quyết định điều trị chắc chắn${referenceContext}${statsContext}`;
 
   let userPrompt = userMessage;
 
   if (context?.caseData) {
-    userPrompt = `[THÔNG TIN CA BỆNH - SỬ DỤNG LÀM BỐI CẢNH CHÍNH]
-Bệnh nhân: ${context.caseData.patientName}, ${context.caseData.patientAge} tuổi, ${context.caseData.patientGender}
-Chẩn đoán: ${context.caseData.diagnosis}
-${context.caseData.egfr ? `eGFR: ${context.caseData.egfr} ml/min/1.73m²` : ''}
-${context.caseData.medicalHistory ? `Tiền sử: ${context.caseData.medicalHistory}` : ''}
-${context.caseData.allergies ? `Dị ứng: ${context.caseData.allergies}` : ''}
+    userPrompt = `[THÔNG TIN CA BỆNH CỤ THỂ - PHÂN TÍCH THEO NGỮ CẢNH NÀY]
+📋 Bệnh nhân: ${context.caseData.patientName}, ${context.caseData.patientAge} tuổi, ${context.caseData.patientGender}
+📌 Chẩn đoán: ${context.caseData.diagnosis}
+${context.caseData.egfr ? `🔬 eGFR: ${context.caseData.egfr} ml/min/1.73m² (${context.caseData.egfr < 60 ? 'CẦN CHỈNH LIỀU!' : 'bình thường'})` : ''}
+${context.caseData.medicalHistory ? `📝 Tiền sử: ${context.caseData.medicalHistory}` : ''}
+${context.caseData.allergies ? `⚠️ Dị ứng: ${context.caseData.allergies}` : ''}
 
-Câu hỏi: ${userMessage}`;
+❓ Câu hỏi: ${userMessage}`;
   }
 
   const messages: ChatMessage[] = [
@@ -843,7 +875,7 @@ Câu hỏi: ${userMessage}`;
 
   messages.push({ role: "user", content: userPrompt });
 
-  return callOpenRouter(MODELS.DEEPSEEK, messages, 0.7);
+  return callOpenRouter(MODELS.DEEPSEEK, messages, 0.4);
 }
 
 export async function extractDataFromDocument(

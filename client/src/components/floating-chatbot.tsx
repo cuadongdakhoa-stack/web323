@@ -157,7 +157,7 @@ export function FloatingChatbot() {
 
       <div className="fixed bottom-6 right-6 z-50">
         {isOpen && (
-          <Card className="w-96 h-[600px] mb-4 flex flex-col shadow-2xl">
+          <Card className="w-96 max-w-[calc(100vw-3rem)] h-[min(600px,80vh)] mb-4 flex flex-col shadow-2xl overflow-hidden">
             <CardHeader className="border-b pb-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">

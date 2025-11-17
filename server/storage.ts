@@ -65,9 +65,27 @@ export interface IStorage {
   createReferenceDocument(doc: InsertReferenceDocument): Promise<ReferenceDocument>;
   updateReferenceDocument(id: string, doc: Partial<InsertReferenceDocument>): Promise<ReferenceDocument | undefined>;
   deleteReferenceDocument(id: string): Promise<void>;
+  
+  getSystemStatistics(): Promise<{
+    totalCases: number;
+    totalPatients: number;
+    topDiagnoses: { diagnosis: string; count: number }[];
+    topMedications: { drugName: string; count: number }[];
+  }>;
 }
 
 export class PostgresStorage implements IStorage {
+  private systemStatsCache: {
+    data: {
+      totalCases: number;
+      totalPatients: number;
+      topDiagnoses: { diagnosis: string; count: number }[];
+      topMedications: { drugName: string; count: number }[];
+    } | null;
+    timestamp: number;
+  } = { data: null, timestamp: 0 };
+  private readonly STATS_CACHE_TTL = 5 * 60 * 1000;
+
   async getUser(id: string): Promise<User | undefined> {
     const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
     return result[0];
@@ -320,6 +338,61 @@ export class PostgresStorage implements IStorage {
 
   async deleteReferenceDocument(id: string): Promise<void> {
     await db.delete(referenceDocuments).where(eq(referenceDocuments.id, id));
+  }
+
+  async getSystemStatistics() {
+    const now = Date.now();
+    if (this.systemStatsCache.data && (now - this.systemStatsCache.timestamp < this.STATS_CACHE_TTL)) {
+      return this.systemStatsCache.data;
+    }
+
+    const totalCasesResult = await db.select({
+      count: sql<number>`count(*)::int`
+    }).from(cases);
+    const totalCases = totalCasesResult[0]?.count || 0;
+
+    const totalPatientsResult = await db.select({
+      count: sql<number>`count(distinct lower(${cases.patientName}))::int`
+    }).from(cases).where(sql`${cases.patientName} IS NOT NULL`);
+    const totalPatients = totalPatientsResult[0]?.count || 0;
+
+    const topDiagnosesResult = await db.select({
+      diagnosis: sql<string>`coalesce(${cases.diagnosisMain}, ${cases.diagnosis})`.as('diagnosis'),
+      count: sql<number>`count(*)::int`.as('count')
+    })
+    .from(cases)
+    .where(sql`coalesce(${cases.diagnosisMain}, ${cases.diagnosis}) IS NOT NULL AND trim(coalesce(${cases.diagnosisMain}, ${cases.diagnosis})) != ''`)
+    .groupBy(sql`coalesce(${cases.diagnosisMain}, ${cases.diagnosis})`)
+    .orderBy(sql`count(*) desc`)
+    .limit(5);
+
+    const topMedicationsResult = await db.select({
+      drugName: sql<string>`lower(trim(${medications.drugName}))`.as('drugName'),
+      count: sql<number>`count(*)::int`.as('count')
+    })
+    .from(medications)
+    .where(sql`${medications.drugName} IS NOT NULL AND trim(${medications.drugName}) != ''`)
+    .groupBy(sql`lower(trim(${medications.drugName}))`)
+    .orderBy(sql`count(*) desc`)
+    .limit(10);
+
+    const stats = {
+      totalCases,
+      totalPatients,
+      topDiagnoses: topDiagnosesResult.map(r => ({ 
+        diagnosis: r.diagnosis || '', 
+        count: r.count 
+      })),
+      topMedications: topMedicationsResult.map(r => ({ 
+        drugName: r.drugName || '', 
+        count: r.count 
+      })),
+    };
+
+    this.systemStatsCache.data = stats;
+    this.systemStatsCache.timestamp = now;
+
+    return stats;
   }
 }
 
