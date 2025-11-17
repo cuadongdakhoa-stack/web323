@@ -955,11 +955,12 @@ CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
     
     // Normalize creatinineUnit to match schema enum
     if (parsed.labResults?.creatinineUnit) {
-      const unit = parsed.labResults.creatinineUnit.toLowerCase();
-      // Handle all variants: μmol/l, µmol/l, umol/l, micromol/l
-      if (unit.includes('mol/l') && !unit.includes('mg')) {
+      const unit = parsed.labResults.creatinineUnit;
+      // Handle micromol/L variants ONLY (μmol, µmol, umol, micromol)
+      // DO NOT match mmol/L, nmol/L, pmol/L
+      if (/^[µμu]mol\/[lL]$/i.test(unit) || /^micromol\/[lL]$/i.test(unit)) {
         parsed.labResults.creatinineUnit = 'micromol/L';
-      } else if (unit.includes('mg/dl')) {
+      } else if (/^mg\/d[lL]$/i.test(unit)) {
         parsed.labResults.creatinineUnit = 'mg/dL';
       }
     }
