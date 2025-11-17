@@ -605,7 +605,7 @@ export default function NewCase() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="diagnosisMain">Chẩn đoán chính <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="diagnosisMain">Chẩn đoán xác định <span className="text-destructive">*</span></Label>
                   <Textarea
                     id="diagnosisMain"
                     data-testid="textarea-diagnosis-main"
@@ -617,7 +617,7 @@ export default function NewCase() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="diagnosisMainIcd">Mã ICD chẩn đoán chính</Label>
+                  <Label htmlFor="diagnosisMainIcd">Mã ICD chẩn đoán xác định</Label>
                   <Input
                     id="diagnosisMainIcd"
                     data-testid="input-diagnosis-main-icd"
@@ -634,7 +634,7 @@ export default function NewCase() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label>Chẩn đoán phụ</Label>
+                  <Label>Bệnh kèm theo</Label>
                   {secondaryDiagnoses.length > 0 && (
                     <div className="space-y-2 mb-2">
                       {secondaryDiagnoses.map((diag) => (
@@ -717,7 +717,7 @@ export default function NewCase() {
                       data-testid="button-add-secondary"
                     >
                       <Plus className="w-4 h-4 mr-2" />
-                      Thêm chẩn đoán phụ
+                      Thêm bệnh kèm theo
                     </Button>
                   )}
                 </div>

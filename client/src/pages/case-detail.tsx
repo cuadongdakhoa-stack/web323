@@ -380,9 +380,33 @@ export default function CaseDetail() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div>
-                <p className="text-sm font-medium text-muted-foreground mb-1">Chẩn đoán</p>
-                <p className="text-base">{caseData.diagnosis}</p>
+                <p className="text-sm font-medium text-muted-foreground mb-1">Chẩn đoán xác định</p>
+                <p className="text-base">
+                  {caseData.diagnosisMain || caseData.diagnosis}
+                  {caseData.icdCodes && typeof caseData.icdCodes === 'object' && 'main' in caseData.icdCodes && caseData.icdCodes.main && (
+                    <span className="ml-2 text-muted-foreground">({String(caseData.icdCodes.main)})</span>
+                  )}
+                </p>
               </div>
+              {caseData.diagnosisSecondary && caseData.diagnosisSecondary.length > 0 && (
+                <div>
+                  <p className="text-sm font-medium text-muted-foreground mb-1">Bệnh kèm theo</p>
+                  <ul className="text-base list-disc list-inside">
+                    {caseData.diagnosisSecondary.map((diag: string, idx: number) => {
+                      const icdCodes = caseData.icdCodes as { secondary?: string[] } | null;
+                      const secondaryIcd = icdCodes?.secondary?.[idx];
+                      return (
+                        <li key={idx}>
+                          {diag}
+                          {secondaryIcd && (
+                            <span className="ml-2 text-muted-foreground">({secondaryIcd})</span>
+                          )}
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </div>
+              )}
               {caseData.medicalHistory && (
                 <div>
                   <p className="text-sm font-medium text-muted-foreground mb-1">Tiền sử bệnh</p>

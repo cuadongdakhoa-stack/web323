@@ -127,14 +127,14 @@ export function AppSidebar() {
       <SidebarFooter className="border-t p-4">
         {userData?.user && (
           <div className="mb-3">
-            <p className="text-sm font-medium">{userData.user.fullName}</p>
-            <p className="text-xs text-muted-foreground">
+            <p className="text-sm font-medium truncate">{userData.user.fullName}</p>
+            <p className="text-xs text-muted-foreground truncate">
               {userData.user.role === "admin" && "Quản trị viên"}
               {userData.user.role === "pharmacist" && "Dược sĩ"}
               {userData.user.role === "doctor" && "Bác sĩ"}
             </p>
             {userData.user.department && (
-              <p className="text-xs text-muted-foreground">{userData.user.department}</p>
+              <p className="text-xs text-muted-foreground truncate">{userData.user.department}</p>
             )}
           </div>
         )}

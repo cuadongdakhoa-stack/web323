@@ -915,7 +915,7 @@ JSON format (⚠️ NẾU THIẾU THÔNG TIN THÌ ĐỂ null - KHÔNG BỊA):
   } hoặc null,
   
   "diagnosis": "nếu không tách được thì ghi chung ở đây",
-  "medicalHistory": "string hoặc null",
+  "medicalHistory": "Tiền sử bệnh: bao gồm bệnh mãn tính (tăng huyết áp, đái tháo đường, suy tim, suy thận, bệnh gan, ung thư...), tiền sử phẫu thuật, tiền sử gia đình. Ghi đầy đủ thông tin có trong tài liệu. Nếu không có thì null.",
   "allergies": "string hoặc null",
   "labResults": {
     "creatinine": number hoặc null,
