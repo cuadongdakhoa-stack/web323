@@ -94,6 +94,9 @@ export type InsertMedication = z.infer<typeof insertMedicationSchema>;
 export type Medication = typeof medications.$inferSelect;
 export type MedicationWithStatus = Medication & {
   status: "active" | "stopped" | "unknown";
+  activeIngredient?: string;
+  strength?: string;
+  unit?: string;
 };
 
 export const analyses = pgTable("analyses", {

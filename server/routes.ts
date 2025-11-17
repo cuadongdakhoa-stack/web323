@@ -21,7 +21,9 @@ import {
   analyses,
   evidence,
   uploadedFiles,
-  type Medication
+  type Medication,
+  type MedicationWithStatus,
+  type DrugFormulary
 } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import { 
@@ -46,11 +48,29 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-type MedicationStatus = "active" | "stopped" | "unknown";
-
-type MedicationWithStatus = Medication & {
-  status: MedicationStatus;
+// Simple in-memory cache for drug formulary (performance optimization)
+let drugFormularyCache: { data: DrugFormulary[] | null, timestamp: number } = {
+  data: null,
+  timestamp: 0
 };
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+function invalidateDrugFormularyCache() {
+  drugFormularyCache.data = null;
+  drugFormularyCache.timestamp = 0;
+}
+
+// Parse strength/unit from prescribedDose (e.g., "500mg" → { strength: "500", unit: "mg" })
+function parseStrengthUnit(dose: string): { strength?: string; unit?: string } {
+  if (!dose) return {};
+  const match = dose.match(/(\d+\.?\d*)\s*([a-zA-Zμ/]+)/);
+  if (match) {
+    return { strength: match[1], unit: match[2] };
+  }
+  return {};
+}
+
+type MedicationStatus = "active" | "stopped" | "unknown";
 
 function getTodayInVietnam(): string {
   const formatter = new Intl.DateTimeFormat('en-CA', { 
@@ -684,10 +704,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       const medications = await storage.getMedicationsByCase(req.params.id);
-      const medicationsWithStatus: MedicationWithStatus[] = medications.map(med => ({
-        ...med,
-        status: computeMedicationStatus(med)
-      }));
+      
+      // Lookup active ingredients from drug formulary (case-insensitive match)
+      // Use cached formulary to avoid repeated full-table scans
+      const now = Date.now();
+      if (!drugFormularyCache.data || (now - drugFormularyCache.timestamp) > CACHE_TTL) {
+        drugFormularyCache.data = await storage.getAllDrugs();
+        drugFormularyCache.timestamp = now;
+      }
+      
+      const drugMap = new Map<string, DrugFormulary>(
+        drugFormularyCache.data
+          .filter(drug => drug.tradeName) // Skip null/undefined trade names
+          .map(drug => [drug.tradeName.toLowerCase().trim(), drug])
+      );
+      
+      const medicationsWithStatus: MedicationWithStatus[] = medications.map(med => {
+        const matchedDrug = drugMap.get(med.drugName.toLowerCase().trim());
+        
+        // Dual-source approach: formulary (priority) + fallback from existing fields
+        const fallbackParsed = parseStrengthUnit(med.prescribedDose);
+        
+        return {
+          ...med,
+          status: computeMedicationStatus(med),
+          // Use formulary if available, otherwise fallback to medication data
+          activeIngredient: matchedDrug?.activeIngredient || med.drugName,
+          strength: matchedDrug?.strength || fallbackParsed.strength,
+          unit: matchedDrug?.unit || fallbackParsed.unit,
+        };
+      });
       res.json(medicationsWithStatus);
     } catch (error: any) {
       res.status(500).json({ message: error.message });
@@ -1535,6 +1581,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const inserted = await storage.createDrugsBatch(validDrugs);
       
+      // Invalidate cache to show updated drugs immediately
+      invalidateDrugFormularyCache();
+      
       const response: any = { 
         message: `Đã import thành công ${inserted.length}/${drugs.length} thuốc`,
         count: inserted.length 
@@ -1556,6 +1605,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const validated = insertDrugFormularySchema.parse(req.body);
       const drug = await storage.createDrug(validated);
+      invalidateDrugFormularyCache(); // Immediate cache refresh
       res.json(drug);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -1568,6 +1618,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!drug) {
         return res.status(404).json({ message: "Không tìm thấy thuốc" });
       }
+      invalidateDrugFormularyCache(); // Immediate cache refresh
       res.json(drug);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -1577,6 +1628,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete("/api/drugs/:id", requireAuth, requireRole("admin"), async (req, res) => {
     try {
       await storage.deleteDrug(req.params.id);
+      invalidateDrugFormularyCache(); // Immediate cache refresh
       res.json({ message: "Đã xóa thuốc" });
     } catch (error: any) {
       res.status(500).json({ message: error.message });
