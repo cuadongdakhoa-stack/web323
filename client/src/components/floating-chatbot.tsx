@@ -20,6 +20,7 @@ interface ChatMessage {
 export function FloatingChatbot() {
   const [isOpen, setIsOpen] = useState(false);
   const [currentMessage, setCurrentMessage] = useState("");
+  const [shouldAutoScroll, setShouldAutoScroll] = useState(true);
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -66,23 +67,61 @@ export function FloatingChatbot() {
     }
   };
 
-  const scrollToBottom = () => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  const scrollToBottom = (force = false) => {
+    if (!scrollRef.current) return;
+    
+    // Get the actual viewport element (the scrollable div inside ScrollArea)
+    const viewport = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+    if (!viewport) return;
+    
+    // Only auto-scroll if user is near bottom (within 100px) OR force is true
+    const { scrollTop, scrollHeight, clientHeight } = viewport;
+    const isNearBottom = scrollHeight - scrollTop - clientHeight < 100;
+    
+    if (force || shouldAutoScroll || isNearBottom) {
+      requestAnimationFrame(() => {
+        if (viewport) {
+          viewport.scrollTop = viewport.scrollHeight;
+        }
+      });
     }
   };
 
   useEffect(() => {
+    if (!scrollRef.current) return;
+    
+    const viewport = scrollRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLDivElement;
+    if (!viewport) return;
+    
+    const handleScroll = () => {
+      const { scrollTop, scrollHeight, clientHeight } = viewport;
+      const isAtBottom = scrollHeight - scrollTop - clientHeight < 50;
+      setShouldAutoScroll(isAtBottom);
+    };
+    
+    viewport.addEventListener('scroll', handleScroll);
+    return () => viewport.removeEventListener('scroll', handleScroll);
+  }, [isOpen]);
+
+  useEffect(() => {
     if (isOpen && chatHistory && chatHistory.length > 0) {
-      scrollToBottom();
+      // On initial open, force scroll to bottom
+      // On subsequent history updates, respect user's scroll position
+      scrollToBottom(chatHistory.length === 1);
     }
   }, [isOpen, chatHistory?.length]);
 
   useEffect(() => {
     if (sendMessageMutation.isSuccess) {
-      setTimeout(scrollToBottom, 100);
+      scrollToBottom(true); // Force scroll after sending
     }
   }, [sendMessageMutation.isSuccess]);
+  
+  useEffect(() => {
+    if (sendMessageMutation.isPending) {
+      scrollToBottom(true); // Force scroll when pending message appears
+    }
+  }, [sendMessageMutation.isPending]);
 
   return (
     <>
