@@ -218,18 +218,28 @@ export default function NewCase() {
       allData.forEach((data) => {
         if (!data || typeof data !== 'object') return;
 
-        setFormData((prev: typeof formData) => ({
-          ...prev,
-          patientName: data.patientName || prev.patientName,
-          patientAge: data.patientAge?.toString() || prev.patientAge,
-          patientGender: data.patientGender || prev.patientGender,
-          patientWeight: data.patientWeight?.toString() || prev.patientWeight,
-          patientHeight: data.patientHeight?.toString() || prev.patientHeight,
-          diagnosisMain: data.diagnosisMain || data.diagnosis || prev.diagnosisMain,
-          diagnosisMainIcd: data.icdCodes?.main || prev.diagnosisMainIcd,
-          medicalHistory: data.medicalHistory || prev.medicalHistory,
-          allergies: data.allergies || prev.allergies,
-        }));
+        setFormData((prev: typeof formData) => {
+          const smartMerge = (newVal: any, oldVal: any) => {
+            if (newVal !== null && newVal !== undefined && newVal !== '') return newVal;
+            return oldVal;
+          };
+
+          return {
+            ...prev,
+            patientName: smartMerge(data.patientName, prev.patientName),
+            patientAge: smartMerge(data.patientAge?.toString(), prev.patientAge),
+            patientGender: smartMerge(data.patientGender, prev.patientGender),
+            patientWeight: smartMerge(data.patientWeight?.toString(), prev.patientWeight),
+            patientHeight: smartMerge(data.patientHeight?.toString(), prev.patientHeight),
+            admissionDate: smartMerge(data.admissionDate, prev.admissionDate),
+            diagnosisMain: smartMerge(data.diagnosisMain || data.diagnosis, prev.diagnosisMain),
+            diagnosisMainIcd: smartMerge(data.icdCodes?.main, prev.diagnosisMainIcd),
+            medicalHistory: smartMerge(data.medicalHistory, prev.medicalHistory),
+            allergies: smartMerge(data.allergies, prev.allergies),
+            creatinine: smartMerge(data.labResults?.creatinine?.toString(), prev.creatinine),
+            creatinineUnit: smartMerge(data.labResults?.creatinineUnit, prev.creatinineUnit),
+          };
+        });
         
         if (data.diagnosisSecondary && Array.isArray(data.diagnosisSecondary) && data.diagnosisSecondary.length > 0) {
           const baseTimestamp = Date.now();

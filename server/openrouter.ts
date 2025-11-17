@@ -14,6 +14,7 @@ const extractedDataSchema = z.object({
   patientGender: z.string().nullable().optional(),
   patientWeight: z.number().nullable().optional(),
   patientHeight: z.number().nullable().optional(),
+  admissionDate: z.string().nullable().optional(), // ISO date YYYY-MM-DD
   
   // Chẩn đoán - CHỈ lấy chẩn đoán chính
   diagnosisMain: z.string().nullable().optional(),
@@ -862,6 +863,10 @@ NGUYÊN TẮC QUAN TRỌNG NHẤT:
 HƯỚNG DẪN TRÍCH XUẤT:
 - CHỈ lấy CHẨN ĐOÁN CHÍNH (main diagnosis) - KHÔNG lấy chẩn đoán phụ
 - Tìm MÃ ICD-10 trong tài liệu (nếu có ghi rõ)
+- NGÀY NHẬP VIỆN (admissionDate): Tìm "Ngày nhập viện", "Ngày vào viện", "Admission date", "Date of admission" → Format YYYY-MM-DD
+  • Ví dụ: "Nhập viện ngày 15/01/2024" → admissionDate: "2024-01-15"
+  • Ví dụ: "Vào viện 01-01-2024" → admissionDate: "2024-01-01"
+  • Nếu không tìm thấy → admissionDate: null
 - Creatinine huyết thanh: Hỗ trợ 2 đơn vị mg/dL và micromol/L (lấy đơn vị nào có trong tài liệu)
   • Nếu thấy "Creatinine: 1.2 mg/dL" → creatinine: 1.2, creatinineUnit: "mg/dL"
   • Nếu thấy "Creatinine: 106 micromol/L" → creatinine: 106, creatinineUnit: "micromol/L"
@@ -908,6 +913,7 @@ JSON format (⚠️ NẾU THIẾU THÔNG TIN THÌ ĐỂ null - KHÔNG BỊA):
   "patientGender": "string hoặc null",
   "patientWeight": number hoặc null,
   "patientHeight": number hoặc null,
+  "admissionDate": "YYYY-MM-DD hoặc null (ngày nhập viện)",
   
   "diagnosisMain": "CHỈ chẩn đoán bệnh CHÍNH - KHÔNG lấy bệnh phụ",
   "icdCodes": {
