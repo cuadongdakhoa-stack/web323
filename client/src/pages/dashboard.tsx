@@ -25,6 +25,8 @@ export default function Dashboard() {
     queryKey: ["/api/auth/me"],
   });
 
+  const recentCases = cases?.slice(0, 5) || [];
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case "draft":
@@ -79,15 +81,17 @@ export default function Dashboard() {
             <>
               <div className="mb-6 flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-tech-gradient">Danh sách Ca lâm sàng</h2>
+                  <h2 className="text-2xl font-bold text-tech-gradient">Ca lâm sàng gần đây</h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {cases.length} ca trong hệ thống
+                    {recentCases.length} / {cases.length} ca gần nhất
                   </p>
                 </div>
-                <Badge variant="outline" className="text-lg px-4 py-2 shadow-sm">
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  {cases.length}
-                </Badge>
+                <Button variant="outline" asChild data-testid="button-view-all-cases">
+                  <Link href="/cases">
+                    <FileText className="w-4 h-4 mr-2" />
+                    Xem tất cả
+                  </Link>
+                </Button>
               </div>
               <Table>
                 <TableHeader>
@@ -101,7 +105,7 @@ export default function Dashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {cases.map((caseData: any) => (
+                  {recentCases.map((caseData: any) => (
                     <TableRow key={caseData.id} data-testid={`row-case-${caseData.id}`}>
                       <TableCell className="font-medium">
                         {caseData.patientName}

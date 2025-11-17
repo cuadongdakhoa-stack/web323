@@ -381,18 +381,29 @@ export default function Library() {
         </div>
       ) : (
         <Card>
-          <CardContent className="py-12">
+          <CardContent className="py-16">
             <div className="text-center">
-              <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-muted-foreground mb-2">
+              <BookOpen className="w-16 h-16 mx-auto text-muted-foreground mb-6" />
+              <h3 className="text-xl font-semibold mb-2">
                 {selectedCategory === "All" 
                   ? "Chưa có tài liệu nào trong thư viện"
                   : `Không có tài liệu trong danh mục "${selectedCategory}"`
                 }
+              </h3>
+              <p className="text-sm text-muted-foreground mb-6 max-w-md mx-auto">
+                {selectedCategory === "All"
+                  ? "Bắt đầu xây dựng thư viện tài liệu dược học để AI tham khảo khi phân tích ca bệnh"
+                  : `Thêm tài liệu ${selectedCategory} để làm phong phú thư viện của bạn`
+                }
               </p>
-              <p className="text-sm text-muted-foreground">
-                Nhấn "Tải lên tài liệu" để thêm tài liệu mới
-              </p>
+              <Button 
+                size="lg"
+                onClick={() => setUploadDialogOpen(true)}
+                data-testid="button-upload-from-empty"
+              >
+                <Upload className="w-5 h-5 mr-2" />
+                Tải lên tài liệu đầu tiên
+              </Button>
             </div>
           </CardContent>
         </Card>
