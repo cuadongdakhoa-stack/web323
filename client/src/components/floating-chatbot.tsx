@@ -24,9 +24,16 @@ export function FloatingChatbot() {
   const { toast } = useToast();
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  const { data: chatHistory, isLoading: loadingHistory } = useQuery<ChatMessage[]>({
+  const { 
+    data: chatHistory, 
+    isLoading: loadingHistory,
+    isError: isHistoryError,
+    isFetching: isFetchingHistory,
+    refetch: refetchHistory 
+  } = useQuery<ChatMessage[]>({
     queryKey: ["/api/chat"],
     enabled: isOpen,
+    retry: 2,
   });
 
   const sendMessageMutation = useMutation({
@@ -45,7 +52,16 @@ export function FloatingChatbot() {
       setCurrentMessage("");
     },
     onError: (error: any) => {
-      const errorMessage = error.message || "Không thể gửi tin nhắn";
+      let errorMessage = "Không thể gửi tin nhắn";
+      
+      if (error.name === 'TimeoutError' || error.message?.includes('timeout')) {
+        errorMessage = "Hết thời gian chờ. Vui lòng thử lại.";
+      } else if (error.message?.includes('network') || error.message?.includes('fetch')) {
+        errorMessage = "Lỗi kết nối. Kiểm tra mạng và thử lại.";
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         variant: "destructive",
         title: "Lỗi gửi tin nhắn",
@@ -64,6 +80,12 @@ export function FloatingChatbot() {
       await sendMessageMutation.mutateAsync(currentMessage);
     } catch (error) {
       console.error("Chat send error:", error);
+    }
+  };
+
+  const handleRetry = () => {
+    if (sendMessageMutation.variables) {
+      sendMessageMutation.mutate(sendMessageMutation.variables);
     }
   };
 
@@ -163,8 +185,36 @@ export function FloatingChatbot() {
             <CardContent className="flex-1 flex flex-col p-0">
               <ScrollArea className="flex-1 p-4" ref={scrollRef}>
                 {loadingHistory ? (
-                  <div className="flex items-center justify-center h-full">
-                    <Loader2 className="w-6 h-6 animate-spin text-muted-foreground" />
+                  <div className="flex flex-col items-center justify-center h-full gap-3">
+                    <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                    <p className="text-sm text-muted-foreground">Đang tải lịch sử...</p>
+                  </div>
+                ) : isHistoryError ? (
+                  <div className="flex flex-col items-center justify-center h-full gap-4 px-4">
+                    <AlertCircle className="w-12 h-12 text-destructive" />
+                    <div className="text-center">
+                      <p className="text-sm font-medium text-foreground mb-1">
+                        Không thể tải lịch sử chat
+                      </p>
+                      <p className="text-xs text-muted-foreground mb-4">
+                        Vui lòng thử lại hoặc kiểm tra kết nối mạng
+                      </p>
+                    </div>
+                    <Button 
+                      size="sm"
+                      onClick={() => refetchHistory()}
+                      disabled={isFetchingHistory}
+                      data-testid="button-retry-history"
+                    >
+                      {isFetchingHistory ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin mr-2" />
+                          Đang tải...
+                        </>
+                      ) : (
+                        "Thử lại"
+                      )}
+                    </Button>
                   </div>
                 ) : chatHistory && chatHistory.length > 0 ? (
                   <div className="space-y-4">
@@ -223,14 +273,43 @@ export function FloatingChatbot() {
                   </div>
                 )}
 
-                {sendMessageMutation.isError && (
-                  <div className="mt-4 flex justify-center">
-                    <div 
-                      className="bg-destructive/10 text-destructive rounded-lg px-4 py-2 flex items-center gap-2"
-                      data-testid="message-error"
-                    >
-                      <AlertCircle className="w-4 h-4" />
-                      <p className="text-xs">Có lỗi xảy ra. Vui lòng thử lại.</p>
+                {sendMessageMutation.isError && sendMessageMutation.variables && (
+                  <div className="mt-4 space-y-2">
+                    <div className="flex justify-end">
+                      <div 
+                        className="bg-primary text-primary-foreground rounded-lg px-4 py-2 max-w-[80%] break-words opacity-50"
+                        data-testid="message-user-failed"
+                      >
+                        <p className="text-sm">{sendMessageMutation.variables}</p>
+                      </div>
+                    </div>
+                    <div className="flex justify-start">
+                      <div 
+                        className="bg-destructive/10 text-destructive rounded-lg px-4 py-3 flex flex-col gap-2"
+                        data-testid="message-error"
+                      >
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                          <p className="text-xs">Tin nhắn gửi thất bại</p>
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={handleRetry}
+                          disabled={sendMessageMutation.isPending}
+                          className="h-7 text-xs"
+                          data-testid="button-retry-message"
+                        >
+                          {sendMessageMutation.isPending ? (
+                            <>
+                              <Loader2 className="w-3 h-3 animate-spin mr-1" />
+                              Đang gửi...
+                            </>
+                          ) : (
+                            "Gửi lại"
+                          )}
+                        </Button>
+                      </div>
                     </div>
                   </div>
                 )}
