@@ -53,6 +53,8 @@ export default function CaseDetail() {
   const [searchQuery, setSearchQuery] = useState("");
   const [isEditingReport, setIsEditingReport] = useState(false);
   const [editedReport, setEditedReport] = useState<ReportContent | null>(null);
+  const [evidencePage, setEvidencePage] = useState(1);
+  const evidencePerPage = 5;
   
   const { data: caseData, isLoading } = useQuery<Case>({
     queryKey: ["/api/cases", id],
@@ -73,6 +75,18 @@ export default function CaseDetail() {
     queryKey: ["/api/cases", id, "evidence"],
     enabled: !!id,
   });
+  
+  // Clamp evidencePage when evidence list changes
+  useEffect(() => {
+    if (evidence && evidence.length > 0) {
+      const totalPages = Math.ceil(evidence.length / evidencePerPage);
+      if (evidencePage > totalPages) {
+        setEvidencePage(totalPages);
+      }
+    } else if (evidence && evidence.length === 0) {
+      setEvidencePage(1);
+    }
+  }, [evidence, evidencePage, evidencePerPage]);
 
   const analyzeMutation = useMutation({
     mutationFn: async () => {
@@ -115,6 +129,7 @@ export default function CaseDetail() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", id, "evidence"] });
+      setEvidencePage(1); // Reset to page 1 to show newest results first
       toast({
         title: "Tìm kiếm thành công",
         description: "Đã lưu bằng chứng y khoa",
@@ -804,9 +819,17 @@ export default function CaseDetail() {
                   <Skeleton className="h-32 w-full" />
                 </div>
               ) : evidence && evidence.length > 0 ? (
-                <div className="space-y-4">
-                  {evidence.slice().reverse().map((item: any) => (
-                    <Card key={item.id} data-testid={`evidence-${item.id}`}>
+                <>
+                  <div className="space-y-4">
+                    {evidence
+                      .slice()
+                      .reverse()
+                      .slice(
+                        (evidencePage - 1) * evidencePerPage,
+                        evidencePage * evidencePerPage
+                      )
+                      .map((item: any) => (
+                        <Card key={item.id} data-testid={`evidence-${item.id}`}>
                       <CardHeader>
                         <div className="flex items-start justify-between gap-2">
                           <div className="flex-1">
@@ -854,8 +877,35 @@ export default function CaseDetail() {
                         )}
                       </CardContent>
                     </Card>
-                  ))}
-                </div>
+                      ))}
+                  </div>
+                  
+                  {Math.ceil(evidence.length / evidencePerPage) > 1 && (
+                    <div className="flex items-center justify-between pt-4 border-t" data-testid="evidence-pagination">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEvidencePage(p => Math.max(1, p - 1))}
+                        disabled={evidencePage === 1}
+                        data-testid="button-evidence-prev"
+                      >
+                        ← Trước
+                      </Button>
+                      <span className="text-sm text-muted-foreground" data-testid="text-evidence-page">
+                        Trang {evidencePage} / {Math.ceil(evidence.length / evidencePerPage)}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setEvidencePage(p => Math.min(Math.ceil(evidence.length / evidencePerPage), p + 1))}
+                        disabled={evidencePage === Math.ceil(evidence.length / evidencePerPage)}
+                        data-testid="button-evidence-next"
+                      >
+                        Sau →
+                      </Button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <div className="text-center py-12">
                   <BookOpen className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
