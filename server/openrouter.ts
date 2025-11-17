@@ -16,10 +16,12 @@ const extractedDataSchema = z.object({
   patientHeight: z.number().nullable().optional(),
   admissionDate: z.string().nullable().optional(), // ISO date YYYY-MM-DD
   
-  // Chẩn đoán - CHỈ lấy chẩn đoán chính
+  // Chẩn đoán - bao gồm cả chính và phụ
   diagnosisMain: z.string().nullable().optional(),
+  diagnosisSecondary: z.array(z.string()).nullable().optional(),
   icdCodes: z.object({
     main: z.string().nullable().optional(),
+    secondary: z.array(z.string()).nullable().optional(),
   }).nullable().optional(),
   
   // Backward compatibility
@@ -512,7 +514,7 @@ DỊ ỨNG: ${caseData.allergies || "Không có"}
 
 XÉT NGHIỆM: ${JSON.stringify(caseData.labResults || {}, null, 2)}
 
-eGFR: ${caseData.egfr || "Chưa tính"} ml/min/1.73m²
+eGFR: ${caseData.egfr || "Chưa tính"} mL/min (Cockcroft-Gault)
 
 DANH SÁCH THUỐC THEO THỜI GIAN SỬ DỤNG:
 ${medicationTimelineSection}${formularyNote}
@@ -572,7 +574,7 @@ Lưu ý:
     };
   }
 
-  const verificationQuery = `Kiểm tra khuyến nghị điều chỉnh liều thuốc cho bệnh nhân ${caseData.patientAge} tuổi với chẩn đoán ${caseData.diagnosis} và eGFR ${caseData.egfr || "không rõ"} ml/min/1.73m². Thuốc đang dùng: ${caseData.medications?.map((m: any) => m.drugName).join(", ")}`;
+  const verificationQuery = `Kiểm tra khuyến nghị điều chỉnh liều thuốc cho bệnh nhân ${caseData.patientAge} tuổi với chẩn đoán ${caseData.diagnosis} và CrCl ${caseData.egfr || "không rõ"} mL/min (Cockcroft-Gault). Thuốc đang dùng: ${caseData.medications?.map((m: any) => m.drugName).join(", ")}`;
 
   const verified = await verifyWithPipeline(
     typeof initialAnalysis === 'string' ? initialAnalysis : JSON.stringify(initialAnalysis), 
@@ -858,7 +860,7 @@ LƯU Ý QUAN TRỌNG:
     userPrompt = `[THÔNG TIN CA BỆNH CỤ THỂ - PHÂN TÍCH THEO NGỮ CẢNH NÀY]
 📋 Bệnh nhân: ${context.caseData.patientName}, ${context.caseData.patientAge} tuổi, ${context.caseData.patientGender}
 📌 Chẩn đoán: ${context.caseData.diagnosis}
-${context.caseData.egfr ? `🔬 eGFR: ${context.caseData.egfr} ml/min/1.73m² (${context.caseData.egfr < 60 ? 'CẦN CHỈNH LIỀU!' : 'bình thường'})` : ''}
+${context.caseData.egfr ? `🔬 CrCl: ${context.caseData.egfr} mL/min (Cockcroft-Gault) - ${context.caseData.egfr < 60 ? 'CẦN CHỈNH LIỀU!' : 'bình thường'}` : ''}
 ${context.caseData.medicalHistory ? `📝 Tiền sử: ${context.caseData.medicalHistory}` : ''}
 ${context.caseData.allergies ? `⚠️ Dị ứng: ${context.caseData.allergies}` : ''}
 
@@ -892,9 +894,12 @@ NGUYÊN TẮC QUAN TRỌNG NHẤT:
 ⚠️ CHỈ TRÍCH XUẤT THÔNG TIN CÓ TRONG TÀI LIỆU - TUYỆT ĐỐI KHÔNG BỊA RA THÔNG TIN
 ⚠️ Nếu không tìm thấy thông tin → trả về null (KHÔNG đoán, KHÔNG suy luận)
 
-HƯỚNG DẪN TRÍCH XUẤT:
-- CHỈ lấy CHẨN ĐOÁN CHÍNH (main diagnosis) - KHÔNG lấy chẩn đoán phụ
-- Tìm MÃ ICD-10 trong tài liệu (nếu có ghi rõ)
+HƯỚNG DẪN TRÍCH XUẤT CHẨN ĐOÁN:
+- Phân tách rõ CHẨN ĐOÁN CHÍNH (diagnosisMain) và BỆNH KÈM (diagnosisSecondary)
+- Tìm MÃ ICD-10 cho CẢ chẩn đoán chính VÀ bệnh kèm (nếu có ghi rõ trong tài liệu)
+- Ví dụ: "Chẩn đoán: Viêm phổi (J18.9). Bệnh kèm: Tăng huyết áp (I10), Đái tháo đường (E11.9)"
+  → diagnosisMain: "Viêm phổi", icdCodes.main: "J18.9"
+  → diagnosisSecondary: ["Tăng huyết áp", "Đái tháo đường"], icdCodes.secondary: ["I10", "E11.9"]
 - NGÀY NHẬP VIỆN (admissionDate): Tìm "Ngày nhập viện", "Ngày vào viện", "Admission date", "Date of admission" → Format YYYY-MM-DD
   • Ví dụ: "Nhập viện ngày 15/01/2024" → admissionDate: "2024-01-15"
   • Ví dụ: "Vào viện 01-01-2024" → admissionDate: "2024-01-01"
@@ -947,12 +952,14 @@ JSON format (⚠️ NẾU THIẾU THÔNG TIN THÌ ĐỂ null - KHÔNG BỊA):
   "patientHeight": number hoặc null,
   "admissionDate": "YYYY-MM-DD hoặc null (ngày nhập viện)",
   
-  "diagnosisMain": "CHỈ chẩn đoán bệnh CHÍNH - KHÔNG lấy bệnh phụ",
+  "diagnosisMain": "Chẩn đoán CHÍNH (ví dụ: Viêm phổi)",
+  "diagnosisSecondary": ["Bệnh kèm 1", "Bệnh kèm 2"] hoặc null,
   "icdCodes": {
-    "main": "mã ICD chính (ví dụ: I10) - CHỈ lấy mã chính"
+    "main": "mã ICD chính (ví dụ: J18.9)",
+    "secondary": ["mã ICD bệnh kèm 1", "mã ICD bệnh kèm 2"] hoặc null
   } hoặc null,
   
-  "diagnosis": "nếu không tách được thì ghi chung ở đây",
+  "diagnosis": "nếu không tách được thì ghi chung ở đây (backward compatibility)",
   "medicalHistory": "Tiền sử bệnh: bao gồm bệnh mãn tính (tăng huyết áp, đái tháo đường, suy tim, suy thận, bệnh gan, ung thư...), tiền sử phẫu thuật, tiền sử gia đình. Ghi đầy đủ thông tin có trong tài liệu. Nếu không có thì null.",
   "allergies": "string hoặc null",
   "labResults": {

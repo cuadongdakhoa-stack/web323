@@ -202,7 +202,7 @@ export default function Cases() {
                     <TableCell>
                       {caseData.egfr ? (
                         <div>
-                          <div className="font-medium">{caseData.egfr} ml/min/1.73m²</div>
+                          <div className="font-medium">{caseData.egfr} mL/min</div>
                           {caseData.egfrCategory && (
                             <div className="text-xs text-muted-foreground">{caseData.egfrCategory}</div>
                           )}

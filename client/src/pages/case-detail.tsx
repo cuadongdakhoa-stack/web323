@@ -383,9 +383,9 @@ export default function CaseDetail() {
                 </p>
               </div>
               <div>
-                <p className="text-sm font-medium text-muted-foreground">eGFR</p>
+                <p className="text-sm font-medium text-muted-foreground">CrCl (Cockcroft-Gault)</p>
                 <p className="text-base" data-testid="text-egfr">
-                  {caseData.egfr ? `${caseData.egfr} ml/min/1.73m²` : "Chưa tính"}
+                  {caseData.egfr ? `${caseData.egfr} mL/min` : "Chưa tính"}
                 </p>
               </div>
             </CardContent>
