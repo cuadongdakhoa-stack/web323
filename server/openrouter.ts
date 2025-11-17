@@ -893,11 +893,25 @@ ${textContent}
 NGUYÊN TẮC QUAN TRỌNG NHẤT:
 ⚠️ CHỈ TRÍCH XUẤT THÔNG TIN CÓ TRONG TÀI LIỆU - TUYỆT ĐỐI KHÔNG BỊA RA THÔNG TIN
 ⚠️ Nếu không tìm thấy thông tin → trả về null (KHÔNG đoán, KHÔNG suy luận)
+⚠️ ĐỌC KỸ TOÀN BỘ TÀI LIỆU - KHÔNG BỎ SÓT THÔNG TIN QUAN TRỌNG
 
-HƯỚNG DẪN TRÍCH XUẤT CHẨN ĐOÁN:
+HƯỚNG DẪN TRÍCH XUẤT CHẨN ĐOÁN (CỰC KỲ QUAN TRỌNG):
 - Phân tách rõ CHẨN ĐOÁN CHÍNH (diagnosisMain) và BỆNH KÈM (diagnosisSecondary)
-- Tìm MÃ ICD-10 cho CẢ chẩn đoán chính VÀ bệnh kèm (nếu có ghi rõ trong tài liệu)
-- Ví dụ: "Chẩn đoán: Viêm phổi (J18.9). Bệnh kèm: Tăng huyết áp (I10), Đái tháo đường (E11.9)"
+- Tìm MÃ ICD-10 cho CẢ chẩn đoán chính VÀ TẤT CẢ bệnh kèm (nếu có ghi rõ trong tài liệu)
+- ⚠️ ĐẶC BIỆT CHÚ Ý: Nếu có bảng kê với các mục số như (15), (16), (17), (18):
+  • Mục (15) hoặc "Chẩn đoán xác định" → diagnosisMain
+  • Mục (16) hoặc "Mã bệnh" → icdCodes.main
+  • Mục (17) hoặc "Bệnh kèm theo" → diagnosisSecondary (PHẢI TÁCH TỪNG BỆNH, ngăn cách bởi dấu ; hoặc ,)
+  • Mục (18) hoặc "Mã bệnh kèm theo" → icdCodes.secondary (PHẢI TÁCH TỪNG MÃ, ngăn cách bởi dấu ; hoặc ,)
+  
+VÍ DỤ BẢNG KÊ:
+- Input: "(15) Bệnh đái tháo đường không phụ thuộc insuline (16) Mã bệnh: E11 (17) Bệnh kèm theo: Rối loạn chuyển hóa lipoprotein;Viêm giáp;Xơ vữa động mạch (18) Mã bệnh kèm theo: E78;K21;M10"
+  → diagnosisMain: "Bệnh đái tháo đường không phụ thuộc insuline"
+  → icdCodes.main: "E11"
+  → diagnosisSecondary: ["Rối loạn chuyển hóa lipoprotein", "Viêm giáp", "Xơ vữa động mạch"]
+  → icdCodes.secondary: ["E78", "K21", "M10"]
+
+- Ví dụ text tự do: "Chẩn đoán: Viêm phổi (J18.9). Bệnh kèm: Tăng huyết áp (I10), Đái tháo đường (E11.9)"
   → diagnosisMain: "Viêm phổi", icdCodes.main: "J18.9"
   → diagnosisSecondary: ["Tăng huyết áp", "Đái tháo đường"], icdCodes.secondary: ["I10", "E11.9"]
 - NGÀY NHẬP VIỆN (admissionDate): Tìm "Ngày nhập viện", "Ngày vào viện", "Admission date", "Date of admission" → Format YYYY-MM-DD
@@ -1001,6 +1015,28 @@ CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
         parsed.labResults.creatinineUnit = 'micromol/L';
       } else if (/^mg\/d[lL]$/i.test(unit)) {
         parsed.labResults.creatinineUnit = 'mg/dL';
+      }
+    }
+    
+    // Post-processing: Clean and validate secondary diagnoses + ICD codes
+    if (parsed.diagnosisSecondary && Array.isArray(parsed.diagnosisSecondary)) {
+      // Trim whitespace from each diagnosis
+      parsed.diagnosisSecondary = parsed.diagnosisSecondary
+        .map((d: string) => d?.trim())
+        .filter((d: string) => d && d.length > 0);
+    }
+    
+    if (parsed.icdCodes?.secondary && Array.isArray(parsed.icdCodes.secondary)) {
+      // Trim whitespace from each ICD code
+      parsed.icdCodes.secondary = parsed.icdCodes.secondary
+        .map((code: string) => code?.trim())
+        .filter((code: string) => code && code.length > 0);
+      
+      // Warn if counts mismatch (for debugging)
+      const diagCount = parsed.diagnosisSecondary?.length || 0;
+      const icdCount = parsed.icdCodes.secondary.length;
+      if (diagCount > 0 && icdCount > 0 && diagCount !== icdCount) {
+        console.warn(`[Extraction Warning] Secondary diagnosis count (${diagCount}) != ICD code count (${icdCount})`);
       }
     }
     
