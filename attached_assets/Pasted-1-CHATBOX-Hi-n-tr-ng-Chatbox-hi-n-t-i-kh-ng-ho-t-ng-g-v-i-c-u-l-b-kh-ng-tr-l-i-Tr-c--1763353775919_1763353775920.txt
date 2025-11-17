@@ -1,0 +1,171 @@
+1. CHATBOX
+
+Hiện trạng:
+Chatbox hiện tại không hoạt động: gõ vài câu là bị đơ, không trả lời. Trước giờ chưa sử dụng được ổn định.
+
+Yêu cầu:
+
+Hoàn thiện chức năng chatbox để khi demo, người dùng gõ câu hỏi là hệ thống phản hồi bình thường.
+
+Đảm bảo chatbox không bị treo sau 2–3 lượt hỏi đáp liên tục.
+
+2. GIAO DIỆN
+
+Thanh trên cùng:
+
+Hiện trạng: Dòng chữ “Quản trị viên Cửa Đông” đang bị xuống dòng/hiển thị không đúng.
+
+Yêu cầu: Căn chỉnh lại để dòng chữ “Quản trị viên Cửa Đông” nằm gọn trên một dòng, hiển thị đẹp và rõ ràng.
+
+Menu bên trái & nút lưu:
+
+Hiện trạng:
+
+Dòng “Case lâm sàng” trong menu chính bị sai chính tả.
+
+Nút “Lưu case lâm sàng” cũng sai chính tả tương tự.
+
+Yêu cầu:
+
+Sửa lại đúng chính tả (ví dụ: dùng “Ca lâm sàng” cho thống nhất tiếng Việt).
+
+Đảm bảo tất cả chỗ hiển thị cùng loại text đều thống nhất.
+
+Tên trường ICD:
+
+Hiện trạng: Trường đang ghi “Mã ICD-10 dự đoán chính”.
+
+Yêu cầu: Đổi lại thành “Mã ICD chẩn đoán chính” cho đúng thuật ngữ chuyên môn.
+
+3. THƯ VIỆN
+
+Cấu trúc thư viện:
+
+Hiện trạng: Trong mục Thư viện hiện có nhiều loại mục, chưa rõ ràng.
+
+Yêu cầu:
+
+Trong mục Thư viện chỉ cần giữ lại 2 nhóm tài liệu:
+
+Tài liệu trong nước
+
+Tài liệu quốc tế
+
+Upload tài liệu:
+
+Hiện trạng:
+
+Mục Thư viện chưa upload được tài liệu.
+
+Mục Danh mục thuốc cũng bị lỗi, chưa upload được file.
+
+Yêu cầu:
+
+Sửa lỗi để có thể upload tài liệu bình thường vào Thư viện.
+
+Sửa lỗi để upload file vào Danh mục thuốc hoạt động ổn định.
+
+4. THÔNG TIN BỆNH NHÂN
+
+Công thức eGFR (creatinin):
+
+Hiện trạng: Chỉ số creatinin (eGFR) đang tính theo công thức CKD-EPI.
+
+Yêu cầu: Đổi lại, tính eGFR theo công thức Cockcroft–Gault, không dùng CKD-EPI.
+
+Đơn vị creatinin:
+
+Hiện trạng: Đang ghi “Micromol/l”.
+
+Yêu cầu: Sửa lại thành “µmol/l” (ký hiệu chuẩn).
+
+Trường chẩn đoán & mã bệnh:
+
+Hiện trạng:
+
+Chẩn đoán chính/phụ trong hệ thống đọc chưa chính xác.
+
+Về mặt chuyên môn: Chẩn đoán chính và chẩn đoán phụ phải là chẩn đoán ra viện, không phải chẩn đoán lúc nhập viện.
+
+Trong bệnh án gốc, các trường ghi là:
+
+“Chẩn đoán xác định / Bệnh kèm theo”
+
+“Mã bệnh / Mã bệnh kèm theo”
+chứ không dùng cụm từ “Chẩn đoán chính / Chẩn đoán phụ” và “Mã ICD chẩn đoán chính / Mã ICD chẩn đoán phụ”.
+
+Có khả năng vì lệch tên trường nên AI không đọc đúng và không tự điền vào các ô tương ứng.
+
+Yêu cầu:
+
+Quy định rõ: Chẩn đoán chính / Chẩn đoán phụ trong hệ thống phải lấy từ phần chẩn đoán ra viện (tương ứng với “Chẩn đoán xác định / Bệnh kèm theo” và “Mã bệnh / Mã bệnh kèm theo” trong bệnh án).
+
+Kiểm tra lại logic trích xuất để AI đọc đúng các trường này và tự động điền vào form.
+
+Mã ICD bệnh:
+
+Hiện trạng:
+
+Trước đây Mã ICD bệnh có hiển thị.
+
+Sau khi chỉnh sửa giao diện/logic, hiện tại không còn thấy hiển thị nữa.
+
+Yêu cầu: Khôi phục hiển thị Mã ICD cho bệnh như trước.
+
+Cột tuổi / năm sinh:
+
+Hiện trạng: Cột chỉ hiển thị tuổi.
+
+Yêu cầu: Cân nhắc hiển thị cả tuổi và năm sinh (ví dụ: “Tuổi (năm sinh)”) để tiện tra cứu.
+
+Tiền sử bệnh:
+
+Hiện trạng: AI đọc và điền tiền sử bệnh chưa đúng với nội dung thực tế trong bệnh án.
+
+Yêu cầu: Cải thiện việc đọc và map thông tin tiền sử bệnh từ bệnh án vào trường tương ứng, hạn chế sai sót.
+
+5. ĐƠN THUỐC
+
+Thêm cột hoạt chất:
+
+Hiện trạng: Trong bảng đơn thuốc hiện chỉ có tên thuốc.
+
+Yêu cầu:
+
+Thêm một cột “Hoạt chất” ngay phía sau cột Tên thuốc.
+
+Bên phía bệnh viện sẽ cung cấp danh mục thuốc có kèm hoạt chất để đối chiếu.
+
+Ngày bắt đầu/kết thúc dùng thuốc & trạng thái:
+
+Hiện trạng:
+
+Thuốc chưa hiển thị ngày bắt đầu dùng và ngày kết thúc dùng.
+
+Dòng chữ “đang dùng” hiển thị chưa đúng thực tế.
+
+Yêu cầu:
+
+Bổ sung và hiển thị chính xác ngày bắt đầu và ngày kết thúc cho từng thuốc.
+
+Cập nhật logic hiển thị trạng thái (đang dùng / đã ngừng / dùng trong bao lâu…) cho đúng với thông tin trong bệnh án.
+
+6. BẰNG CHỨNG Y KHOA
+
+Số lượng & cách hiển thị:
+
+Hiện trạng:
+
+Mục “Bằng chứng y khoa” hiện chỉ hiển thị tối đa khoảng 5 báo cáo/bài chứng cứ.
+
+Link dẫn tới tài liệu chưa sâu, chưa thực sự hữu ích.
+
+Yêu cầu:
+
+Thiết kế lại mục Bằng chứng y khoa giống trải nghiệm kiểu Google Scholar:
+
+Kéo thanh xuống sẽ tiếp tục load thêm nhiều bằng chứng/bài báo ở phía dưới (hoặc phân trang hợp lý).
+
+Khi gõ từ khóa tìm kiếm, hệ thống trả về danh sách tài liệu liên quan để lựa chọn.
+
+Khi click vào từng bài, dẫn link đến trang bài báo/tài liệu gốc đầy đủ (full text hoặc abstract tùy nguồn).

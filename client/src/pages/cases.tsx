@@ -56,14 +56,14 @@ export default function Cases() {
       setCaseToDelete(null);
       toast({
         title: "Đã xóa",
-        description: "Case lâm sàng đã được xóa thành công",
+        description: "Ca lâm sàng đã được xóa thành công",
       });
     },
     onError: (error: any) => {
       toast({
         variant: "destructive",
-        title: "Lỗi xóa case lâm sàng",
-        description: error.message || "Không thể xóa case lâm sàng",
+        title: "Lỗi xóa ca lâm sàng",
+        description: error.message || "Không thể xóa ca lâm sàng",
       });
     },
   });
@@ -116,15 +116,15 @@ export default function Cases() {
       <div className="mb-8">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-semibold mb-2">Case lâm sàng</h1>
+            <h1 className="text-3xl font-semibold mb-2">Ca lâm sàng</h1>
             <p className="text-muted-foreground">
-              Quản lý và phân tích các case lâm sàng của bạn
+              Quản lý và phân tích các ca lâm sàng của bạn
             </p>
           </div>
           <Button asChild data-testid="button-new-case">
             <Link href="/cases/new">
               <Plus className="w-4 h-4 mr-2" />
-              Tạo case lâm sàng mới
+              Tạo ca lâm sàng mới
             </Link>
           </Button>
         </div>
@@ -132,9 +132,9 @@ export default function Cases() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Danh sách case lâm sàng</CardTitle>
+          <CardTitle>Danh sách ca lâm sàng</CardTitle>
           <CardDescription>
-            {filteredCases.length} / {cases?.length || 0} case lâm sàng
+            {filteredCases.length} / {cases?.length || 0} ca lâm sàng
           </CardDescription>
           <div className="flex gap-4 mt-4">
             <div className="flex-1 relative">
@@ -274,13 +274,13 @@ export default function Cases() {
               <FileText className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
               <p className="text-muted-foreground mb-4">
                 {searchQuery || statusFilter !== "all" 
-                  ? "Không tìm thấy case lâm sàng nào" 
-                  : "Chưa có case lâm sàng nào"}
+                  ? "Không tìm thấy ca lâm sàng nào" 
+                  : "Chưa có ca lâm sàng nào"}
               </p>
               <Button asChild data-testid="button-create-first-case">
                 <Link href="/cases/new">
                   <Plus className="w-4 h-4 mr-2" />
-                  Tạo case lâm sàng đầu tiên
+                  Tạo ca lâm sàng đầu tiên
                 </Link>
               </Button>
             </div>
@@ -291,9 +291,9 @@ export default function Cases() {
       <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Xác nhận xóa case lâm sàng</AlertDialogTitle>
+            <AlertDialogTitle>Xác nhận xóa ca lâm sàng</AlertDialogTitle>
             <AlertDialogDescription>
-              Bạn có chắc chắn muốn xóa case lâm sàng của{" "}
+              Bạn có chắc chắn muốn xóa ca lâm sàng của{" "}
               <span className="font-semibold">{caseToDelete?.patientName}</span>?
               <br />
               Hành động này không thể hoàn tác và sẽ xóa tất cả dữ liệu liên quan (thuốc, phân tích, bằng chứng).

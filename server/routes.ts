@@ -457,7 +457,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const caseData = await storage.getCase(caseId);
       if (!caseData) {
-        return res.status(404).json({ message: "Không tìm thấy case lâm sàng" });
+        return res.status(404).json({ message: "Không tìm thấy ca lâm sàng" });
       }
 
       const user = req.user!;
@@ -554,7 +554,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const caseData = await storage.getCase(req.params.id);
       if (!caseData) {
-        return res.status(404).json({ message: "Không tìm thấy case lâm sàng" });
+        return res.status(404).json({ message: "Không tìm thấy ca lâm sàng" });
       }
 
       const user = req.user!;
@@ -592,7 +592,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const caseData = await storage.getCase(fileRecord.caseId);
       if (!caseData) {
-        return res.status(404).json({ message: "Không tìm thấy case lâm sàng" });
+        return res.status(404).json({ message: "Không tìm thấy ca lâm sàng" });
       }
 
       const user = req.user!;
@@ -632,7 +632,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const caseData = await storage.getCase(fileRecord.caseId);
       if (!caseData) {
-        return res.status(404).json({ message: "Không tìm thấy case lâm sàng" });
+        return res.status(404).json({ message: "Không tìm thấy ca lâm sàng" });
       }
 
       const user = req.user!;

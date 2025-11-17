@@ -361,8 +361,8 @@ export default function NewCase() {
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
       toast({
-        title: "Tạo case lâm sàng thành công",
-        description: "Case lâm sàng đã được lưu vào hệ thống",
+        title: "Tạo ca lâm sàng thành công",
+        description: "Ca lâm sàng đã được lưu vào hệ thống",
       });
       setLocation(`/cases/${data.id}`);
     },
@@ -370,7 +370,7 @@ export default function NewCase() {
       toast({
         variant: "destructive",
         title: "Lỗi",
-        description: error.message || "Không thể tạo case lâm sàng",
+        description: error.message || "Không thể tạo ca lâm sàng",
       });
     },
   });
@@ -471,7 +471,7 @@ export default function NewCase() {
             Quay lại danh sách
           </Link>
         </Button>
-        <h1 className="text-3xl font-semibold mb-2">Tạo case lâm sàng mới</h1>
+        <h1 className="text-3xl font-semibold mb-2">Tạo ca lâm sàng mới</h1>
         <p className="text-muted-foreground">
           Nhập thông tin bệnh nhân hoặc upload file PDF/Word
         </p>
@@ -574,7 +574,7 @@ export default function NewCase() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="mg/dL">mg/dL</SelectItem>
-                        <SelectItem value="micromol/L">micromol/L</SelectItem>
+                        <SelectItem value="micromol/L">µmol/l</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
@@ -617,7 +617,7 @@ export default function NewCase() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="diagnosisMainIcd">Mã ICD-10 chẩn đoán chính</Label>
+                  <Label htmlFor="diagnosisMainIcd">Mã ICD chẩn đoán chính</Label>
                   <Input
                     id="diagnosisMainIcd"
                     data-testid="input-diagnosis-main-icd"
@@ -670,7 +670,7 @@ export default function NewCase() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="secondaryIcd">Mã ICD-10</Label>
+                        <Label htmlFor="secondaryIcd">Mã ICD</Label>
                         <Input
                           id="secondaryIcd"
                           data-testid="input-secondary-icd"
@@ -963,7 +963,7 @@ export default function NewCase() {
                 data-testid="button-save-case"
               >
                 <Save className="w-4 h-4 mr-2" />
-                {createCaseMutation.isPending ? "Đang lưu..." : "Lưu case lâm sàng"}
+                {createCaseMutation.isPending ? "Đang lưu..." : "Lưu ca lâm sàng"}
               </Button>
               <Button type="button" variant="outline" asChild>
                 <Link href="/cases">Hủy</Link>

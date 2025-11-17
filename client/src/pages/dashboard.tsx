@@ -47,7 +47,7 @@ export default function Dashboard() {
             Chào mừng trở lại, <span className="text-tech-gradient">{userData?.user?.fullName}</span>
           </h1>
           <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-            Quản lý và phân tích các case lâm sàng của bạn với trợ lý AI
+            Quản lý và phân tích các ca lâm sàng của bạn với trợ lý AI
           </p>
           <Button 
             size="lg" 
@@ -58,7 +58,7 @@ export default function Dashboard() {
           >
             <Link href="/cases/new">
               <Plus className="w-6 h-6 mr-3" />
-              TẠO CASE LÂM SÀNG
+              TẠO CA LÂM SÀNG
               <Sparkles className="w-5 h-5 ml-3" />
             </Link>
           </Button>
@@ -79,9 +79,9 @@ export default function Dashboard() {
             <>
               <div className="mb-6 flex items-center justify-between">
                 <div>
-                  <h2 className="text-2xl font-bold text-tech-gradient">Danh sách Case lâm sàng</h2>
+                  <h2 className="text-2xl font-bold text-tech-gradient">Danh sách Ca lâm sàng</h2>
                   <p className="text-sm text-muted-foreground mt-1">
-                    {cases.length} case trong hệ thống
+                    {cases.length} ca trong hệ thống
                   </p>
                 </div>
                 <Badge variant="outline" className="text-lg px-4 py-2 shadow-sm">
@@ -142,9 +142,9 @@ export default function Dashboard() {
           ) : (
             <div className="text-center py-16">
               <FileText className="w-16 h-16 mx-auto text-muted-foreground mb-6" />
-              <h3 className="text-xl font-semibold mb-2">Chưa có case lâm sàng nào</h3>
+              <h3 className="text-xl font-semibold mb-2">Chưa có ca lâm sàng nào</h3>
               <p className="text-muted-foreground mb-6">
-                Bắt đầu bằng cách tạo case lâm sàng đầu tiên của bạn
+                Bắt đầu bằng cách tạo ca lâm sàng đầu tiên của bạn
               </p>
               <Button 
                 size="lg"
@@ -154,7 +154,7 @@ export default function Dashboard() {
               >
                 <Link href="/cases/new">
                   <Plus className="w-5 h-5 mr-2" />
-                  TẠO CASE ĐẦU TIÊN
+                  TẠO CA ĐẦU TIÊN
                 </Link>
               </Button>
             </div>
