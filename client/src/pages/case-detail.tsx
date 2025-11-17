@@ -9,6 +9,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { ArrowLeft, FileText, Beaker, BookOpen, FileSignature, Pill, Loader2, CheckCircle2, AlertCircle, Search, ExternalLink, Edit, X, Save, Download, FileDown } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -54,6 +55,7 @@ export default function CaseDetail() {
   const [isEditingReport, setIsEditingReport] = useState(false);
   const [editedReport, setEditedReport] = useState<ReportContent | null>(null);
   const [evidencePage, setEvidencePage] = useState(1);
+  const [evidenceSort, setEvidenceSort] = useState<"date" | "relevance" | "citations">("date");
   const evidencePerPage = 5;
   
   const { data: caseData, isLoading } = useQuery<Case>({
@@ -781,36 +783,60 @@ export default function CaseDetail() {
               <CardDescription>Guidelines và nghiên cứu liên quan</CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="flex gap-2">
-                <Input
-                  placeholder="Tìm kiếm guidelines, nghiên cứu, khuyến nghị..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && searchQuery.trim()) {
-                      searchEvidenceMutation.mutate(searchQuery.trim());
-                    }
-                  }}
-                  disabled={searchEvidenceMutation.isPending}
-                  data-testid="input-evidence-search"
-                />
-                <Button
-                  onClick={() => searchQuery.trim() && searchEvidenceMutation.mutate(searchQuery.trim())}
-                  disabled={!searchQuery.trim() || searchEvidenceMutation.isPending}
-                  data-testid="button-search-evidence"
-                >
-                  {searchEvidenceMutation.isPending ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Đang tìm...
-                    </>
-                  ) : (
-                    <>
-                      <Search className="w-4 h-4 mr-2" />
-                      Tìm kiếm
-                    </>
-                  )}
-                </Button>
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Tìm kiếm guidelines, nghiên cứu, khuyến nghị..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && searchQuery.trim()) {
+                        searchEvidenceMutation.mutate(searchQuery.trim());
+                      }
+                    }}
+                    disabled={searchEvidenceMutation.isPending}
+                    data-testid="input-evidence-search"
+                  />
+                  <Button
+                    onClick={() => searchQuery.trim() && searchEvidenceMutation.mutate(searchQuery.trim())}
+                    disabled={!searchQuery.trim() || searchEvidenceMutation.isPending}
+                    data-testid="button-search-evidence"
+                  >
+                    {searchEvidenceMutation.isPending ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Đang tìm...
+                      </>
+                    ) : (
+                      <>
+                        <Search className="w-4 h-4 mr-2" />
+                        Tìm kiếm
+                      </>
+                    )}
+                  </Button>
+                </div>
+                {evidence && evidence.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-muted-foreground">Sắp xếp:</span>
+                    <Select 
+                      value={evidenceSort} 
+                      onValueChange={(v: any) => {
+                        setEvidenceSort(v);
+                        setEvidencePage(1); // Reset to page 1 when sort changes
+                      }} 
+                      data-testid="select-evidence-sort"
+                    >
+                      <SelectTrigger className="w-48">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="date">Mới nhất</SelectItem>
+                        <SelectItem value="relevance">Độ liên quan</SelectItem>
+                        <SelectItem value="citations">Số trích dẫn</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
 
               {evidenceLoading ? (
@@ -823,7 +849,18 @@ export default function CaseDetail() {
                   <div className="space-y-4">
                     {evidence
                       .slice()
-                      .reverse()
+                      .sort((a: any, b: any) => {
+                        if (evidenceSort === "date") {
+                          const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                          const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                          return dateB - dateA;
+                        } else if (evidenceSort === "relevance") {
+                          return (b.relevanceScore || 0) - (a.relevanceScore || 0);
+                        } else if (evidenceSort === "citations") {
+                          return (b.citationCount || 0) - (a.citationCount || 0);
+                        }
+                        return 0;
+                      })
                       .slice(
                         (evidencePage - 1) * evidencePerPage,
                         evidencePage * evidencePerPage
