@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useLocation, Link } from "wouter";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
@@ -10,7 +10,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import { ArrowLeft, Upload, Save, Plus, Trash2, FileText, Loader2, X, Calendar } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { ArrowLeft, Upload, Save, Plus, Trash2, FileText, Loader2, X, Calendar, AlertCircle } from "lucide-react";
 import {
   Table,
   TableBody,
@@ -56,32 +57,53 @@ interface Medication {
   usageEndDate: string;
 }
 
+const AUTOSAVE_KEY = "new-case-draft";
+const AUTOSAVE_INTERVAL = 30000; // 30 seconds
+
+const INITIAL_FORM_DATA = {
+  patientName: "",
+  patientAge: "",
+  patientGender: "",
+  patientWeight: "",
+  patientHeight: "",
+  creatinine: "",
+  creatinineUnit: "mg/dL",
+  admissionDate: new Date().toISOString().split('T')[0],
+  diagnosisMain: "",
+  diagnosisMainIcd: "",
+  medicalHistory: "",
+  allergies: "",
+  status: "draft",
+};
+
 export default function NewCase() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   
-  const [formData, setFormData] = useState({
-    patientName: "",
-    patientAge: "",
-    patientGender: "",
-    patientWeight: "",
-    patientHeight: "",
-    creatinine: "",
-    creatinineUnit: "mg/dL",
-    admissionDate: new Date().toISOString().split('T')[0],
-    diagnosisMain: "",
-    diagnosisMainIcd: "",
-    medicalHistory: "",
-    allergies: "",
-    status: "draft",
-  });
+  const loadDraft = () => {
+    try {
+      const saved = localStorage.getItem(AUTOSAVE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        return parsed;
+      }
+    } catch (error) {
+      console.error("Failed to load draft:", error);
+    }
+    return null;
+  };
 
-  const [secondaryDiagnoses, setSecondaryDiagnoses] = useState<SecondaryDiagnosis[]>([]);
+  const draft = loadDraft();
+  
+  const [formData, setFormData] = useState(draft?.formData || INITIAL_FORM_DATA);
+
+  const [secondaryDiagnoses, setSecondaryDiagnoses] = useState<SecondaryDiagnosis[]>(draft?.secondaryDiagnoses || []);
   const [currentSecondary, setCurrentSecondary] = useState({ text: "", icd: "" });
   const [showSecondaryForm, setShowSecondaryForm] = useState(false);
 
-  const [medications, setMedications] = useState<Medication[]>([]);
+  const [medications, setMedications] = useState<Medication[]>(draft?.medications || []);
   const [showMedForm, setShowMedForm] = useState(false);
+  const [medFormErrors, setMedFormErrors] = useState<Record<string, string>>({});
   const [currentMed, setCurrentMed] = useState<Medication>({
     id: "",
     drugName: "",
@@ -95,7 +117,44 @@ export default function NewCase() {
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [formErrors, setFormErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (draft) {
+      toast({
+        title: "Đã khôi phục bản nháp",
+        description: "Dữ liệu form đã được tự động lưu trước đó",
+      });
+    }
+  }, []);
+
+  useEffect(() => {
+    const hasChanged = Object.keys(formData).some(key => {
+      const currentValue = formData[key as keyof typeof formData];
+      const initialValue = INITIAL_FORM_DATA[key as keyof typeof INITIAL_FORM_DATA];
+      return currentValue !== initialValue;
+    });
+    const hasData = hasChanged || medications.length > 0 || secondaryDiagnoses.length > 0;
+    
+    if (!hasData) return;
+
+    const interval = setInterval(() => {
+      try {
+        localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({
+          formData,
+          medications,
+          secondaryDiagnoses,
+          savedAt: new Date().toISOString(),
+        }));
+        console.log("Auto-saved draft at", new Date().toLocaleTimeString());
+      } catch (error) {
+        console.error("Failed to auto-save:", error);
+      }
+    }, AUTOSAVE_INTERVAL);
+
+    return () => clearInterval(interval);
+  }, [formData, medications, secondaryDiagnoses]);
 
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
@@ -159,7 +218,7 @@ export default function NewCase() {
       allData.forEach((data) => {
         if (!data || typeof data !== 'object') return;
 
-        setFormData(prev => ({
+        setFormData((prev: typeof formData) => ({
           ...prev,
           patientName: data.patientName || prev.patientName,
           patientAge: data.patientAge?.toString() || prev.patientAge,
@@ -360,6 +419,7 @@ export default function NewCase() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases"] });
+      localStorage.removeItem(AUTOSAVE_KEY);
       toast({
         title: "Tạo ca lâm sàng thành công",
         description: "Ca lâm sàng đã được lưu vào hệ thống",
@@ -377,56 +437,35 @@ export default function NewCase() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    
+    const errors: string[] = [];
+    
+    if (!formData.patientName.trim()) errors.push("Họ và tên bệnh nhân");
+    if (!formData.patientAge) errors.push("Tuổi bệnh nhân");
+    if (!formData.patientGender) errors.push("Giới tính bệnh nhân");
+    if (!formData.patientWeight) errors.push("Cân nặng bệnh nhân");
+    if (!formData.diagnosisMain.trim()) errors.push("Chẩn đoán xác định");
+    
+    if (errors.length > 0) {
+      setFormErrors(errors);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+    
+    setFormErrors([]);
     createCaseMutation.mutate({ caseData: formData, medications, secondaryDiagnoses });
   };
 
   const handleChange = (field: string, value: string) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData((prev: typeof formData) => ({ ...prev, [field]: value }));
+    if (formErrors.length > 0) {
+      setFormErrors([]);
+    }
   };
 
   const addMedication = () => {
-    if (!currentMed.drugName || !currentMed.prescribedDose) {
-      toast({
-        variant: "destructive",
-        title: "Lỗi",
-        description: "Vui lòng nhập tên thuốc và liều dùng",
-      });
+    if (!validateMedForm()) {
       return;
-    }
-    
-    if (!currentMed.usageStartDate) {
-      toast({
-        variant: "destructive",
-        title: "Thiếu thông tin",
-        description: "Vui lòng nhập ngày bắt đầu dùng thuốc để kiểm tra tương tác chính xác",
-      });
-      return;
-    }
-    
-    if (currentMed.usageStartDate && formData.admissionDate) {
-      const startDate = new Date(currentMed.usageStartDate);
-      const admissionDate = new Date(formData.admissionDate);
-      if (startDate < admissionDate) {
-        toast({
-          variant: "destructive",
-          title: "Ngày không hợp lệ",
-          description: "Ngày bắt đầu dùng thuốc không thể trước ngày nhập viện",
-        });
-        return;
-      }
-    }
-    
-    if (currentMed.usageEndDate && currentMed.usageStartDate) {
-      const endDate = new Date(currentMed.usageEndDate);
-      const startDate = new Date(currentMed.usageStartDate);
-      if (endDate < startDate) {
-        toast({
-          variant: "destructive",
-          title: "Ngày không hợp lệ",
-          description: "Ngày kết thúc phải sau hoặc bằng ngày bắt đầu",
-        });
-        return;
-      }
     }
     
     const newMed = {
@@ -444,6 +483,7 @@ export default function NewCase() {
       usageStartDate: "",
       usageEndDate: "",
     });
+    setMedFormErrors({});
     setShowMedForm(false);
     toast({
       title: "Đã thêm thuốc",
@@ -460,6 +500,46 @@ export default function NewCase() {
 
   const handleMedChange = (field: keyof Medication, value: string) => {
     setCurrentMed(prev => ({ ...prev, [field]: value }));
+    if (medFormErrors[field]) {
+      setMedFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
+  };
+
+  const validateMedForm = (): boolean => {
+    const errors: Record<string, string> = {};
+    
+    if (!currentMed.drugName.trim()) {
+      errors.drugName = "Vui lòng nhập tên thuốc";
+    }
+    if (!currentMed.prescribedDose.trim()) {
+      errors.prescribedDose = "Vui lòng nhập liều dùng";
+    }
+    if (!currentMed.usageStartDate) {
+      errors.usageStartDate = "Bắt buộc để kiểm tra tương tác thuốc chính xác";
+    }
+    
+    if (currentMed.usageStartDate && formData.admissionDate) {
+      const startDate = new Date(currentMed.usageStartDate);
+      const admissionDate = new Date(formData.admissionDate);
+      if (startDate < admissionDate) {
+        errors.usageStartDate = "Không thể trước ngày nhập viện";
+      }
+    }
+    
+    if (currentMed.usageEndDate && currentMed.usageStartDate) {
+      const endDate = new Date(currentMed.usageEndDate);
+      const startDate = new Date(currentMed.usageStartDate);
+      if (endDate < startDate) {
+        errors.usageEndDate = "Phải sau hoặc bằng ngày bắt đầu";
+      }
+    }
+    
+    setMedFormErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   return (
@@ -480,10 +560,32 @@ export default function NewCase() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div className="lg:col-span-2">
           <form onSubmit={handleSubmit} className="space-y-6">
+            {formErrors.length > 0 && (
+              <Alert variant="destructive" className="sticky top-2 z-10 shadow-lg" data-testid="form-error-banner">
+                <AlertCircle className="w-4 h-4" />
+                <AlertTitle>Vui lòng kiểm tra lại thông tin</AlertTitle>
+                <AlertDescription>
+                  <p className="mb-2">Các trường sau đang thiếu hoặc không hợp lệ:</p>
+                  <ul className="list-disc list-inside space-y-1">
+                    {formErrors.map((error, index) => (
+                      <li key={index}>{error}</li>
+                    ))}
+                  </ul>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <Card>
               <CardHeader>
-                <CardTitle>Thông tin bệnh nhân</CardTitle>
-                <CardDescription>Nhập đầy đủ thông tin cơ bản của bệnh nhân</CardDescription>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                    1
+                  </div>
+                  <div>
+                    <CardTitle>Thông tin bệnh nhân</CardTitle>
+                    <CardDescription>Nhập đầy đủ thông tin cơ bản của bệnh nhân</CardDescription>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
@@ -602,7 +704,12 @@ export default function NewCase() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Thông tin lâm sàng</CardTitle>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                    2
+                  </div>
+                  <CardTitle>Thông tin lâm sàng</CardTitle>
+                </div>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
@@ -749,10 +856,17 @@ export default function NewCase() {
 
             <Card>
               <CardHeader>
-                <CardTitle>Đơn thuốc</CardTitle>
-                <CardDescription>
-                  Danh sách thuốc đang dùng ({medications.length} loại)
-                </CardDescription>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
+                    3
+                  </div>
+                  <div>
+                    <CardTitle>Đơn thuốc</CardTitle>
+                    <CardDescription>
+                      Danh sách thuốc đang dùng ({medications.length} loại)
+                    </CardDescription>
+                  </div>
+                </div>
               </CardHeader>
               <CardContent>
                 {medications.length > 0 && (
@@ -826,7 +940,13 @@ export default function NewCase() {
                           value={currentMed.drugName}
                           onChange={(e) => handleMedChange("drugName", e.target.value)}
                           placeholder="Ví dụ: Paracetamol"
+                          className={medFormErrors.drugName ? "border-destructive" : ""}
                         />
+                        {medFormErrors.drugName && (
+                          <p className="text-sm text-destructive" data-testid="error-drug-name">
+                            {medFormErrors.drugName}
+                          </p>
+                        )}
                       </div>
                       <div className="space-y-2">
                         <Label htmlFor="prescribedDose">Liều dùng *</Label>
@@ -836,7 +956,13 @@ export default function NewCase() {
                           value={currentMed.prescribedDose}
                           onChange={(e) => handleMedChange("prescribedDose", e.target.value)}
                           placeholder="Ví dụ: 500mg"
+                          className={medFormErrors.prescribedDose ? "border-destructive" : ""}
                         />
+                        {medFormErrors.prescribedDose && (
+                          <p className="text-sm text-destructive" data-testid="error-prescribed-dose">
+                            {medFormErrors.prescribedDose}
+                          </p>
+                        )}
                       </div>
                     </div>
 
@@ -900,11 +1026,17 @@ export default function NewCase() {
                             value={currentMed.usageStartDate}
                             onChange={(e) => handleMedChange("usageStartDate", e.target.value)}
                             min={formData.admissionDate}
-                            className="border-primary/30"
+                            className={medFormErrors.usageStartDate ? "border-destructive" : "border-primary/30"}
                           />
-                          <p className="text-xs text-muted-foreground">
-                            Bắt buộc để kiểm tra tương tác thuốc chính xác
-                          </p>
+                          {medFormErrors.usageStartDate ? (
+                            <p className="text-xs text-destructive" data-testid="error-usage-start-date">
+                              {medFormErrors.usageStartDate}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Bắt buộc để kiểm tra tương tác thuốc chính xác
+                            </p>
+                          )}
                         </div>
                         <div className="space-y-2">
                           <Label htmlFor="usageEndDate" className="text-sm">
@@ -917,11 +1049,17 @@ export default function NewCase() {
                             value={currentMed.usageEndDate}
                             onChange={(e) => handleMedChange("usageEndDate", e.target.value)}
                             min={currentMed.usageStartDate || formData.admissionDate}
-                            className="border-primary/30"
+                            className={medFormErrors.usageEndDate ? "border-destructive" : "border-primary/30"}
                           />
-                          <p className="text-xs text-muted-foreground">
-                            Để trống nếu thuốc đang dùng
-                          </p>
+                          {medFormErrors.usageEndDate ? (
+                            <p className="text-xs text-destructive" data-testid="error-usage-end-date">
+                              {medFormErrors.usageEndDate}
+                            </p>
+                          ) : (
+                            <p className="text-xs text-muted-foreground">
+                              Để trống nếu thuốc đang dùng
+                            </p>
+                          )}
                         </div>
                       </div>
                     </div>
