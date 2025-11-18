@@ -1163,10 +1163,17 @@ LƯU Ý: tradeName và activeIngredient là BẮT BUỘC, các trường khác c
       throw new Error("AI response không có mảng drugs");
     }
     
-    // Filter out invalid entries
-    const validDrugs = parsed.drugs.filter((drug: any) => 
-      drug.tradeName && drug.activeIngredient
-    );
+    // Filter out invalid entries and normalize structure
+    const validDrugs = parsed.drugs
+      .filter((drug: any) => drug.tradeName && drug.activeIngredient)
+      .map((drug: any) => ({
+        tradeName: (drug.tradeName || '').toString().trim(),
+        activeIngredient: (drug.activeIngredient || '').toString().trim(),
+        strength: (drug.strength || '').toString().trim(),
+        unit: (drug.unit || '').toString().trim(),
+        manufacturer: drug.manufacturer || null,
+        notes: drug.notes || null,
+      }));
     
     console.log(`[AI Drug Extract] Extracted ${validDrugs.length}/${parsed.drugs.length} valid drugs`);
     
