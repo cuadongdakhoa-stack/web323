@@ -306,7 +306,7 @@ export default function DrugFormularyPage() {
           <DialogHeader>
             <DialogTitle>Upload danh mục thuốc</DialogTitle>
             <DialogDescription>
-              Chọn file Excel (.xlsx) hoặc CSV. File phải có các cột: "Tên thuốc", "Hoạt chất",
+              Chọn file Excel (.xlsx, .xls) hoặc CSV. File phải có các cột: "Tên thuốc", "Hoạt chất",
               "Hàm lượng", "Đơn vị"
             </DialogDescription>
           </DialogHeader>
@@ -315,7 +315,7 @@ export default function DrugFormularyPage() {
               <Label>File Excel/CSV</Label>
               <Input
                 type="file"
-                accept=".xlsx,.csv"
+                accept=".xlsx,.xls,.csv"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 data-testid="input-file-upload"
               />
