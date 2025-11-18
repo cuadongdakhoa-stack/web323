@@ -22,10 +22,13 @@ export async function apiRequest(
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
   try {
+    // Don't set Content-Type for FormData - browser will set multipart/form-data automatically
+    const isFormData = options?.body instanceof FormData;
+    
     const res = await fetch(url, {
       method: options?.method || "GET",
       headers: {
-        ...(options?.body ? { "Content-Type": "application/json" } : {}),
+        ...(options?.body && !isFormData ? { "Content-Type": "application/json" } : {}),
         ...(options?.headers || {}),
       },
       body: options?.body,
