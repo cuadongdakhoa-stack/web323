@@ -44,10 +44,10 @@ export function calculateEGFR(input: EGFRInput): EGFRResult | null {
   const weight = providedWeight;
 
   // Convert micromol/L to mg/dL if needed
-  // Conversion factor: 1 mg/dL = 88.42 micromol/L
+  // Conversion factor: 1 mg/dL = 88.4 micromol/L (per Cockcroft-Gault reference)
   let creatinineInMgDL = creatinine;
   if (creatinineUnit === "micromol/L") {
-    creatinineInMgDL = creatinine / 88.42;
+    creatinineInMgDL = creatinine / 88.4;
   }
 
   let egfr: number;

@@ -1526,8 +1526,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Không có file được tải lên" });
       }
 
-      if (!req.file.mimetype.includes('spreadsheet') && !req.file.originalname.endsWith('.xlsx') && !req.file.originalname.endsWith('.csv')) {
-        return res.status(400).json({ message: "Chỉ hỗ trợ file Excel (.xlsx) hoặc CSV" });
+      if (!req.file.mimetype.includes('spreadsheet') && 
+          !req.file.originalname.endsWith('.xlsx') && 
+          !req.file.originalname.endsWith('.xls') && 
+          !req.file.originalname.endsWith('.csv')) {
+        return res.status(400).json({ message: "Chỉ hỗ trợ file Excel (.xlsx, .xls) hoặc CSV" });
       }
 
       const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
