@@ -1540,20 +1540,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (useAI) {
         console.log(`[Drug Upload] File size ${(req.file.size / 1024 / 1024).toFixed(2)}MB - using AI extraction`);
         
-        // Convert Excel to text for AI processing
+        // Convert Excel to text for AI processing (no JSON parsing)
         const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
         const sheetName = workbook.SheetNames[0];
         const sheet = workbook.Sheets[sheetName];
         const fileText = XLSX.utils.sheet_to_csv(sheet);
         
-        // Use AI to extract drug data
-        drugs = await extractDrugDataFromFile(fileText);
+        console.log(`[Drug Upload] Converted Excel to CSV text (${fileText.length} chars)`);
         
-        if (drugs.length === 0) {
+        // Use AI to extract drug data (AI returns structured array)
+        const extractedDrugs = await extractDrugDataFromFile(fileText);
+        
+        if (extractedDrugs.length === 0) {
           return res.status(400).json({ 
             message: "AI không tìm thấy dữ liệu thuốc hợp lệ trong file" 
           });
         }
+        
+        // AI already returns structured data, just assign it
+        drugs = extractedDrugs;
+        
       } else {
         console.log(`[Drug Upload] File size ${(req.file.size / 1024 / 1024).toFixed(2)}MB - using XLSX parsing`);
         
