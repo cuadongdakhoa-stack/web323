@@ -1097,3 +1097,82 @@ Trả về JSON (QUAN TRỌNG: CHỈ JSON, không thêm text khác):
     };
   }
 }
+
+/**
+ * Extract drug formulary data from file content using AI
+ * Supports Excel files converted to text
+ */
+export async function extractDrugDataFromFile(fileContent: string): Promise<Array<{
+  tradeName: string;
+  activeIngredient: string;
+  strength: string;
+  unit: string;
+  manufacturer?: string;
+  notes?: string;
+}>> {
+  const systemPrompt = `Bạn là chuyên viên dược. Nhiệm vụ: trích xuất danh sách thuốc từ file Excel/CSV thành cấu trúc JSON.`;
+
+  const userPrompt = `Đọc nội dung file danh mục thuốc dưới đây và trích xuất thành JSON array.
+
+NỘI DUNG FILE:
+${fileContent.slice(0, 50000)}
+
+YÊU CẦU:
+1. Tìm TẤT CẢ các dòng chứa thông tin thuốc (bỏ qua header/tiêu đề)
+2. Với mỗi dòng thuốc, extract các thông tin:
+   - tradeName: Tên thuốc (tên biệt dược, tên thương mại)
+   - activeIngredient: Hoạt chất/thành phần chính
+   - strength: Hàm lượng (số + đơn vị, ví dụ: "500", "10", "2.5")
+   - unit: Đơn vị (mg, g, ml, %, IU, v.v.)
+   - manufacturer: Nhà sản xuất (nếu có)
+   - notes: Ghi chú (nếu có)
+
+3. Nếu strength và unit gộp chung (ví dụ "500mg"), tách ra:
+   - strength: "500"
+   - unit: "mg"
+
+4. Bỏ qua các dòng trống, header, hoặc không phải thuốc
+
+ĐỊNH DẠNG TRẢ VỀ (CHỈ JSON, KHÔNG TEXT KHÁC):
+{
+  "drugs": [
+    {
+      "tradeName": "Paracetamol 500mg",
+      "activeIngredient": "Paracetamol",
+      "strength": "500",
+      "unit": "mg",
+      "manufacturer": "Imexpharm",
+      "notes": null
+    }
+  ]
+}
+
+LƯU Ý: tradeName và activeIngredient là BẮT BUỘC, các trường khác có thể null nếu không có.`;
+
+  try {
+    const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.3);
+    const cleanedResult = rawResult.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/```\s*$/i, '')
+      .trim();
+    
+    const parsed = JSON.parse(cleanedResult);
+    
+    if (!parsed.drugs || !Array.isArray(parsed.drugs)) {
+      throw new Error("AI response không có mảng drugs");
+    }
+    
+    // Filter out invalid entries
+    const validDrugs = parsed.drugs.filter((drug: any) => 
+      drug.tradeName && drug.activeIngredient
+    );
+    
+    console.log(`[AI Drug Extract] Extracted ${validDrugs.length}/${parsed.drugs.length} valid drugs`);
+    
+    return validDrugs;
+  } catch (error: any) {
+    console.error("Failed to extract drug data with AI:", error);
+    throw new Error("Lỗi khi AI trích xuất dữ liệu thuốc: " + error.message);
+  }
+}

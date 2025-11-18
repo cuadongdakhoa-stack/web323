@@ -33,7 +33,8 @@ import {
   chatWithAI,
   extractDataFromDocument,
   verifyWithPipeline,
-  suggestDocuments
+  suggestDocuments,
+  extractDrugDataFromFile
 } from "./openrouter";
 import { generatePDF, generateDOCX } from "./reportExport";
 import { calculateEGFR, extractCreatinine } from "./egfrCalculator";
@@ -1533,39 +1534,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Chỉ hỗ trợ file Excel (.xlsx, .xls) hoặc CSV" });
       }
 
-      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
-      const sheetName = workbook.SheetNames[0];
-      const sheet = workbook.Sheets[sheetName];
-      const data = XLSX.utils.sheet_to_json(sheet);
+      let drugs: any[] = [];
+      const useAI = req.file.size > 5 * 1024 * 1024; // Use AI for files > 5MB
 
-      if (data.length === 0) {
-        return res.status(400).json({ message: "File không có dữ liệu" });
-      }
+      if (useAI) {
+        console.log(`[Drug Upload] File size ${(req.file.size / 1024 / 1024).toFixed(2)}MB - using AI extraction`);
+        
+        // Convert Excel to text for AI processing
+        const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const fileText = XLSX.utils.sheet_to_csv(sheet);
+        
+        // Use AI to extract drug data
+        drugs = await extractDrugDataFromFile(fileText);
+        
+        if (drugs.length === 0) {
+          return res.status(400).json({ 
+            message: "AI không tìm thấy dữ liệu thuốc hợp lệ trong file" 
+          });
+        }
+      } else {
+        console.log(`[Drug Upload] File size ${(req.file.size / 1024 / 1024).toFixed(2)}MB - using XLSX parsing`);
+        
+        const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(sheet);
 
-      // Validate required columns
-      const firstRow: any = data[0];
-      const hasVietnameseHeaders = 'Tên thuốc' in firstRow || 'Hoạt chất' in firstRow;
-      const hasEnglishHeaders = 'tradeName' in firstRow || 'activeIngredient' in firstRow;
-      
-      if (!hasVietnameseHeaders && !hasEnglishHeaders) {
-        return res.status(400).json({ 
-          message: "File thiếu cột bắt buộc. Cần có: 'Tên thuốc', 'Hoạt chất' hoặc 'tradeName', 'activeIngredient'" 
-        });
-      }
+        if (data.length === 0) {
+          return res.status(400).json({ message: "File không có dữ liệu" });
+        }
 
-      const drugs = data.map((row: any) => ({
-        tradeName: (row['Tên thuốc'] ?? row['tradeName'] ?? '').toString().trim(),
-        activeIngredient: (row['Hoạt chất'] ?? row['activeIngredient'] ?? '').toString().trim(),
-        strength: (row['Hàm lượng'] ?? row['strength'] ?? '').toString().trim(),
-        unit: (row['Đơn vị'] ?? row['unit'] ?? '').toString().trim(),
-        manufacturer: row['Nhà sản xuất'] ?? row['manufacturer'] ?? null,
-        notes: row['Ghi chú'] ?? row['notes'] ?? null,
-      })).filter((drug: any) => drug.tradeName && drug.activeIngredient);
+        // Validate required columns
+        const firstRow: any = data[0];
+        const hasVietnameseHeaders = 'Tên thuốc' in firstRow || 'Hoạt chất' in firstRow;
+        const hasEnglishHeaders = 'tradeName' in firstRow || 'activeIngredient' in firstRow;
+        
+        if (!hasVietnameseHeaders && !hasEnglishHeaders) {
+          return res.status(400).json({ 
+            message: "File thiếu cột bắt buộc. Cần có: 'Tên thuốc', 'Hoạt chất' hoặc 'tradeName', 'activeIngredient'" 
+          });
+        }
 
-      if (drugs.length === 0) {
-        return res.status(400).json({ 
-          message: `Không tìm thấy dữ liệu hợp lệ trong file. Kiểm tra ${data.length} dòng, tất cả đều thiếu tên thuốc hoặc hoạt chất.` 
-        });
+        drugs = data.map((row: any) => ({
+          tradeName: (row['Tên thuốc'] ?? row['tradeName'] ?? '').toString().trim(),
+          activeIngredient: (row['Hoạt chất'] ?? row['activeIngredient'] ?? '').toString().trim(),
+          strength: (row['Hàm lượng'] ?? row['strength'] ?? '').toString().trim(),
+          unit: (row['Đơn vị'] ?? row['unit'] ?? '').toString().trim(),
+          manufacturer: row['Nhà sản xuất'] ?? row['manufacturer'] ?? null,
+          notes: row['Ghi chú'] ?? row['notes'] ?? null,
+        })).filter((drug: any) => drug.tradeName && drug.activeIngredient);
+
+        if (drugs.length === 0) {
+          return res.status(400).json({ 
+            message: `Không tìm thấy dữ liệu hợp lệ trong file. Kiểm tra ${data.length} dòng, tất cả đều thiếu tên thuốc hoặc hoạt chất.` 
+          });
+        }
       }
 
       // Validate each drug with schema
@@ -1594,7 +1619,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       invalidateDrugFormularyCache();
       
       const response: any = { 
-        message: `Đã import thành công ${inserted.length}/${drugs.length} thuốc`,
+        message: `Đã import thành công ${inserted.length}/${drugs.length} thuốc${useAI ? ' (sử dụng AI)' : ''}`,
         count: inserted.length 
       };
       
