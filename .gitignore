@@ -39,6 +39,5 @@ yarn-debug.log*
 
 # Test/Demo files
 attached_assets/
-*.png
-*.jpg
-*.jpeg
+# Allow logo files
+!client/public/logo.png
