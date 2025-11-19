@@ -836,11 +836,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get drug formulary for context
       const allDrugs = await storage.getAllDrugs();
 
-      const analysisResult = await analyzePatientCase({
-        ...caseData,
-        medications,
-      }, allDrugs);
+      // 🚀 OPTIMIZED: Run analysis and evidence search in parallel
+      const query = `Tương tác thuốc và điều chỉnh liều cho bệnh nhân ${caseData.patientName || 'Unknown'} với chẩn đoán ${caseData.diagnosisMain || caseData.diagnosis || 'Unknown'}`;
+      
+      console.log(`[Parallel Processing] Starting analysis + evidence search for case ${req.params.id}`);
+      
+      const [analysisResult, evidenceResults] = await Promise.all([
+        // Analysis
+        analyzePatientCase({
+          ...caseData,
+          medications,
+        }, allDrugs),
+        
+        // Evidence search (run in parallel)
+        searchMedicalEvidence(query).catch(err => {
+          console.error(`[Evidence Search] Failed:`, err.message);
+          return []; // Return empty array on error
+        })
+      ]);
 
+      console.log(`[Parallel Processing] ✅ Both completed. Evidence items: ${evidenceResults.length}`);
+
+      // Save analysis result
       const analysis = await storage.createAnalysis({
         caseId: req.params.id,
         analysisType: "patient_case",
@@ -852,30 +869,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Update case status to completed after successful analysis
       await storage.updateCase(req.params.id, { status: "completed" });
 
-      // Auto-trigger evidence search BEFORE responding (critical for production/serverless)
-      // In production, fire-and-forget async is terminated when response completes
-      const caseId = req.params.id;
-      try {
-        console.log(`[Evidence Search] Starting auto-trigger for case ${caseId}`);
-        const query = `Tương tác thuốc và điều chỉnh liều cho bệnh nhân ${caseData.patientName || 'Unknown'} với chẩn đoán ${caseData.diagnosisMain || caseData.diagnosis || 'Unknown'}`;
-        console.log(`[Evidence Search] Query: ${query.substring(0, 100)}...`);
-        
-        const evidenceResults = await searchMedicalEvidence(query);
-        console.log(`[Evidence Search] Received ${evidenceResults.length} results for case ${caseId}`);
-        
-        // Save each evidence item to database
+      // Save evidence items (already fetched in parallel)
+      if (evidenceResults.length > 0) {
         for (const evidence of evidenceResults) {
           await storage.createEvidence({
-            caseId,
+            caseId: req.params.id,
             query,
             ...evidence,
-          });
+          }).catch(err => console.error(`[Evidence] Save failed:`, err.message));
         }
-        console.log(`[Evidence Search] ✅ Completed and saved ${evidenceResults.length} items for case ${caseId}`);
-      } catch (evidenceError: any) {
-        // Non-critical: log but don't fail the whole analysis
-        console.error(`[Evidence Search] ❌ Failed for case ${caseId}:`, evidenceError.message);
-        console.error(`[Evidence Search] Full error:`, evidenceError);
+        console.log(`[Evidence Search] ✅ Saved ${evidenceResults.length} items`);
       }
 
       res.json(analysis);
