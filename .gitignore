@@ -39,5 +39,6 @@ yarn-debug.log*
 
 # Test/Demo files
 attached_assets/
-# Allow logo files
+# Allow logo and favicon
 !client/public/logo.png
+!client/public/favicon.png
