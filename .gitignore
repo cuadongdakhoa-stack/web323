@@ -1,6 +1,44 @@
+# Dependencies
 node_modules
+
+# Build output
 dist
+
+# OS
 .DS_Store
 server/public
 vite.config.ts.*
 *.tar.gz
+.env
+.env.local
+uploads/*
+!uploads/.gitkeep
+
+# Replit files (not needed)
+.replit
+.config
+.local
+
+# Deployment
+.vercel
+.netlify
+
+# OS
+Thumbs.db
+*.log
+npm-debug.log*
+yarn-debug.log*
+
+# IDE
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+.idea
+*.swp
+*.swo
+
+# Test/Demo files
+attached_assets/
+*.png
+*.jpg
+*.jpeg

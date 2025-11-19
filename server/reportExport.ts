@@ -3,9 +3,34 @@ import { Document, Packer, Paragraph, TextRun, HeadingLevel, AlignmentType } fro
 import type { ConsultationReport } from '@shared/schema';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// In production (bundled), fonts are at dist/fonts
+// In development, fonts are at server/fonts
+function getFontPath(): string {
+  // Production build: __dirname will be /dist/, fonts at /dist/fonts/
+  const prodPath = path.join(__dirname, 'fonts');
+  if (fs.existsSync(prodPath)) {
+    return prodPath;
+  }
+  
+  // Development: __dirname will be /server/, fonts at /server/fonts/
+  const devPath = path.join(__dirname, 'fonts');
+  if (fs.existsSync(devPath)) {
+    return devPath;
+  }
+  
+  // Fallback: try relative to project root
+  const fallbackPath = path.join(__dirname, '..', 'server', 'fonts');
+  if (fs.existsSync(fallbackPath)) {
+    return fallbackPath;
+  }
+  
+  throw new Error(`Font directory not found. Tried: ${prodPath}, ${devPath}, ${fallbackPath}`);
+}
 
 export function generatePDF(report: ConsultationReport, patientData: any): Promise<Buffer> {
   return new Promise((resolve, reject) => {
@@ -21,7 +46,7 @@ export function generatePDF(report: ConsultationReport, patientData: any): Promi
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      const fontPath = path.join(__dirname, 'fonts');
+      const fontPath = getFontPath();
       doc.registerFont('NotoSans', path.join(fontPath, 'NotoSans-Regular.ttf'));
       doc.registerFont('NotoSans-Bold', path.join(fontPath, 'NotoSans-Bold.ttf'));
       doc.font('NotoSans');

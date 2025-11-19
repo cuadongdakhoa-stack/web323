@@ -40,7 +40,7 @@ export default function Cases() {
   const [caseToDelete, setCaseToDelete] = useState<any>(null);
   const itemsPerPage = 10;
 
-  const { data: cases, isLoading } = useQuery({
+  const { data: cases, isLoading } = useQuery<any[]>({
     queryKey: ["/api/cases"],
   });
 

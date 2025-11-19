@@ -17,11 +17,11 @@ import { formatDistanceToNow } from "date-fns";
 import { vi } from "date-fns/locale";
 
 export default function Dashboard() {
-  const { data: cases, isLoading: casesLoading } = useQuery({
+  const { data: cases, isLoading: casesLoading } = useQuery<any[]>({
     queryKey: ["/api/cases"],
   });
 
-  const { data: userData } = useQuery({
+  const { data: userData } = useQuery<any>({
     queryKey: ["/api/auth/me"],
   });
 

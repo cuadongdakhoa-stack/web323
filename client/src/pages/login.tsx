@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import logoUrl from "@assets/Thiết kế chưa có tên (6)_1763057903176.png";
+import { Activity } from "lucide-react";
 
 export default function Login() {
   const [, setLocation] = useLocation();
@@ -58,11 +58,9 @@ export default function Login() {
           <div className="flex justify-center mb-4">
             <div className="relative">
               <div className="absolute inset-0 bg-primary/20 rounded-full blur-md animate-pulse"></div>
-              <img 
-                src={logoUrl} 
-                alt="Cửa Đông Care+ Pharma Logo" 
-                className="w-20 h-20 relative z-10 ring-4 ring-primary/20 rounded-full" 
-              />
+              <div className="w-20 h-20 relative z-10 ring-4 ring-primary/20 rounded-full bg-white flex items-center justify-center overflow-hidden">
+                <img src="/logo.png" alt="Care Pharma Logo" className="w-16 h-16 object-contain" />
+              </div>
             </div>
           </div>
           <CardTitle className="text-3xl font-bold bg-gradient-to-r from-primary via-accent to-primary bg-clip-text text-transparent">

@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { storage } from "./storage";
 
 const FIXED_USERS = [
