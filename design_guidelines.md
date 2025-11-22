@@ -13,6 +13,29 @@
 
 ---
 
+## 🆕 Progress Indicators & Upload Feedback
+
+**File Upload Progress** (Added Nov 2025):
+- Real-time progress bars during file upload and AI analysis
+- Multi-stage progress tracking:
+  1. Upload stage (0-20%): File transfer to server
+  2. Processing stage (20-60%): Content extraction from PDF/DOCX
+  3. AI Analysis (60-90%): DeepSeek extraction
+  4. Completion (90-100%): Data mapping
+- Visual feedback includes:
+  - Animated progress bar (h-2 height)
+  - Stage description text
+  - Percentage counter (font-mono for precision)
+  - Loading spinner during active processing
+  
+**Implementation**:
+- Component: `<Progress />` from shadcn/ui
+- States tracked: `uploadProgress`, `extractionProgress`, `uploadStage`, `extractionStage`
+- Smooth transitions with 1s delay before reset
+- Used in: `new-case.tsx`, `FileUploadSection.tsx`
+
+---
+
 ## Typography
 
 **Font Stack**: 

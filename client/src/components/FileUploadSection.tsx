@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Progress } from "@/components/ui/progress";
 import { Upload, FileText, Loader2, Download, Trash2, File, Image, Sparkles } from "lucide-react";
 import {
   Table,
@@ -82,6 +83,8 @@ function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStage, setUploadStage] = useState("");
 
   const { data: files, isLoading } = useQuery<UploadedFile[]>({
     queryKey: ["/api/cases", caseId, "files", group],
@@ -98,24 +101,46 @@ function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
 
   const uploadMutation = useMutation({
     mutationFn: async (files: FileList) => {
-      const formData = new FormData();
-      Array.from(files).forEach((file) => {
-        formData.append("files", file);
-      });
-      formData.append("fileGroup", group);
+      try {
+        setUploadProgress(0);
+        setUploadStage(`Đang chuẩn bị upload ${files.length} file...`);
+        
+        const formData = new FormData();
+        Array.from(files).forEach((file) => {
+          formData.append("files", file);
+        });
+        formData.append("fileGroup", group);
 
-      const response = await fetch(`/api/cases/${caseId}/files`, {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
+        setUploadProgress(20);
+        setUploadStage("Gửi file lên server...");
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Upload failed");
+        const response = await fetch(`/api/cases/${caseId}/files`, {
+          method: "POST",
+          body: formData,
+          credentials: "include",
+        });
+
+        setUploadProgress(60);
+        setUploadStage("Đang xử lý file...");
+
+        if (!response.ok) {
+          const error = await response.json();
+          throw new Error(error.message || "Upload failed");
+        }
+
+        setUploadProgress(90);
+        setUploadStage("Hoàn tất upload!");
+        
+        const result = await response.json();
+        
+        setUploadProgress(100);
+        return result;
+      } finally {
+        setTimeout(() => {
+          setUploadProgress(0);
+          setUploadStage("");
+        }, 1000);
       }
-
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/cases", caseId, "files", group] });
@@ -229,10 +254,19 @@ function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
 
         <div className="text-center">
           {uploadMutation.isPending ? (
-            <>
+            <div className="space-y-3">
               <Loader2 className="w-12 h-12 mx-auto text-primary mb-4 animate-spin" />
               <p className="text-sm font-medium mb-2">Đang upload file...</p>
-            </>
+              <div className="max-w-xs mx-auto space-y-2">
+                <Progress value={uploadProgress} className="h-2" />
+                <p className="text-xs text-muted-foreground">
+                  {uploadStage || "Đang xử lý..."}
+                </p>
+                <p className="text-xs font-mono text-muted-foreground">
+                  {Math.round(uploadProgress)}%
+                </p>
+              </div>
+            </div>
           ) : selectedFiles && selectedFiles.length > 0 ? (
             <>
               <File className="w-12 h-12 mx-auto text-green-600 mb-4" />

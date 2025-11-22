@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ArrowLeft, Upload, Save, Plus, Trash2, FileText, Loader2, X, Calendar, AlertCircle } from "lucide-react";
@@ -117,6 +118,8 @@ export default function NewCase() {
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
+  const [extractionProgress, setExtractionProgress] = useState(0);
+  const [extractionStage, setExtractionStage] = useState("");
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -164,11 +167,25 @@ export default function NewCase() {
       
       try {
         setIsExtracting(true);
+        setExtractionProgress(0);
         
-        for (const file of files) {
+        const totalFiles = files.length;
+        
+        for (let i = 0; i < files.length; i++) {
+          const file = files[i];
+          const fileProgress = (i / totalFiles) * 100;
+          
           try {
+            // Stage 1: Upload (0-20% of this file's portion)
+            setExtractionStage(`Đang tải lên file ${i + 1}/${totalFiles}: ${file.name}`);
+            setExtractionProgress(fileProgress + 5);
+            
             const formData = new FormData();
             formData.append('file', file);
+            
+            // Stage 2: Sending to server (20-40%)
+            setExtractionStage(`Đang gửi file ${i + 1}/${totalFiles} đến server...`);
+            setExtractionProgress(fileProgress + 10);
             
             const response = await fetch('/api/cases/extract', {
               method: 'POST',
@@ -180,16 +197,34 @@ export default function NewCase() {
               const error = await response.json();
               errors.push(`${file.name}: ${error.message || 'Upload failed'}`);
               failedFiles.push(file);
+              setExtractionProgress(fileProgress + (100 / totalFiles));
               continue;
             }
 
+            // Stage 3: AI Processing (40-90%)
+            setExtractionStage(`Đang phân tích file ${i + 1}/${totalFiles} bằng AI...`);
+            setExtractionProgress(fileProgress + 50);
+            
             const data = await response.json();
+            
+            // Stage 4: Extracting data (90-100%)
+            setExtractionStage(`Đang trích xuất dữ liệu từ file ${i + 1}/${totalFiles}...`);
+            setExtractionProgress(fileProgress + 80);
+            
             allExtractedData.push(data);
+            
+            // Complete this file
+            setExtractionProgress(fileProgress + (100 / totalFiles));
           } catch (error: any) {
             errors.push(`${file.name}: ${error.message || 'Lỗi không xác định'}`);
             failedFiles.push(file);
+            setExtractionProgress(fileProgress + (100 / totalFiles));
           }
         }
+        
+        // Final stage
+        setExtractionStage("Hoàn tất phân tích!");
+        setExtractionProgress(100);
         
         if (errors.length > 0 && allExtractedData.length === 0) {
           throw new Error(`Không thể phân tích file:\n${errors.join('\n')}`);
@@ -197,7 +232,11 @@ export default function NewCase() {
         
         return { data: allExtractedData, errors, failedFiles };
       } finally {
-        setIsExtracting(false);
+        setTimeout(() => {
+          setIsExtracting(false);
+          setExtractionProgress(0);
+          setExtractionStage("");
+        }, 1000);
       }
     },
     onSuccess: (result) => {
@@ -1179,6 +1218,22 @@ export default function NewCase() {
                   Hỗ trợ: PDF, DOC, DOCX, JPG, PNG
                 </p>
               </div>
+
+              {isExtracting && (
+                <div className="space-y-3 p-4 border rounded-lg bg-muted/30 animate-in fade-in duration-300">
+                  <div className="flex items-center gap-2">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <p className="text-sm font-medium">Đang xử lý...</p>
+                  </div>
+                  <Progress value={extractionProgress} className="h-2" />
+                  <p className="text-xs text-muted-foreground">
+                    {extractionStage || "Đang khởi tạo..."}
+                  </p>
+                  <p className="text-xs font-mono text-muted-foreground text-right">
+                    {Math.round(extractionProgress)}%
+                  </p>
+                </div>
+              )}
 
               <div className="flex gap-2">
                 {!uploadMutation.isPending && (
