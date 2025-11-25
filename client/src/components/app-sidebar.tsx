@@ -6,6 +6,7 @@ import {
   BookOpen,
   LogOut,
   Pill,
+  BarChart3,
 } from "lucide-react";
 import type { AuthMeResponse } from "@shared/schema";
 import {
@@ -39,6 +40,11 @@ const menuItems = [
     title: "Thư viện",
     url: "/library",
     icon: BookOpen,
+  },
+  {
+    title: "Tổng hợp số liệu",
+    url: "/reports",
+    icon: BarChart3,
   },
 ];
 

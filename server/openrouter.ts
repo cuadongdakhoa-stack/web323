@@ -527,7 +527,9 @@ ${medicationSegments.length > 0
   ? `- Danh sách thuốc đã được PHÂN NHÓM theo thời gian sử dụng
 - CHỈ kiểm tra tương tác giữa các thuốc TRONG CÙNG NHÓM (cùng thời điểm)
 - KHÔNG kiểm tra tương tác giữa thuốc ở nhóm này với thuốc ở nhóm khác
-- Ví dụ: Thuốc ở Nhóm 1 KHÔNG tương tác với thuốc ở Nhóm 2 vì không dùng cùng lúc`
+- Ví dụ: Thuốc A (01/01-03/01) và Thuốc B (04/01-06/01) → KHÔNG overlap → KHÔNG tương tác
+- Ví dụ: Thuốc C (01/01-05/01) và Thuốc D (03/01-08/01) → CÓ overlap (03/01-05/01) → CÓ tương tác
+- ⚠️ TUYỆT ĐỐI KHÔNG kiểm tra tương tác giữa các thuốc ở nhóm khác nhau (vì không dùng cùng thời điểm)`
   : `- Danh sách thuốc CHƯA có thông tin ngày tháng rõ ràng
 - Kiểm tra tất cả tương tác có thể xảy ra`}
 
@@ -939,18 +941,23 @@ VÍ DỤ BẢNG KÊ:
 - Format ngày đầu ra: YYYY-MM-DD
 
 VÍ DỤ NHẬN DIỆN NGÀY THÁNG (rất quan trọng):
+⚠️ QUY TẮC QUAN TRỌNG NHẤT: 
+- CHỈ lấy ĐÚNG ngày cuối cùng được ghi rõ trong tài liệu
+- KHÔNG được tự ý kéo dài usageEndDate ra quá ngày cuối cùng có trong văn bản
+- Nếu thuốc dùng "Ngày 1,2,3" thì endDate = ngày 3, KHÔNG PHẢI ngày 6 hay ngày nào khác
+
 1. Khoảng ngày rõ ràng:
    - "Ngày 1-3/1/2024: Paracetamol" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
    - "01/01/2024 - 05/01/2024: Amoxicillin" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-05"
    - "Từ 15/01 đến 20/01/2024" → usageStartDate: "2024-01-15", usageEndDate: "2024-01-20"
 
-2. Nhiều ngày liên tiếp (parse ALL dates):
-   - "Ngày 1,2,3/1/2024: Ceftriaxone" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
+2. Nhiều ngày liên tiếp (parse ALL dates - endDate = ngày cuối cùng):
+   - "Ngày 1,2,3/1/2024: Ceftriaxone" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03" (KHÔNG PHẢI 2024-01-06!)
    - "01, 02, 03/01/2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
    - "Ngày 5, 6, 7, 8/12/2023" → usageStartDate: "2023-12-05", usageEndDate: "2023-12-08"
 
-3. Ngày không liên tiếp (lấy ngày đầu và cuối):
-   - "Ngày 1, 3, 5/1/2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-05"
+3. Ngày không liên tiếp (lấy ngày đầu và ngày cuối TRONG DANH SÁCH):
+   - "Ngày 1, 3, 5/1/2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-05" (ngày cuối TRONG danh sách)
    - "Ngày 10, 15, 20/02/2024" → usageStartDate: "2024-02-10", usageEndDate: "2024-02-20"
 
 4. Format khác:
@@ -958,8 +965,15 @@ VÍ DỤ NHẬN DIỆN NGÀY THÁNG (rất quan trọng):
    - "Ngày nhập viện 05/01/2024, dùng 7 ngày" → usageStartDate: "2024-01-05", usageEndDate: "2024-01-12"
 
 5. Chỉ có 1 ngày hoặc không có ngày:
-   - "Ngày 15/01/2024: Aspirin" → usageStartDate: "2024-01-15", usageEndDate: null
+   - "Ngày 15/01/2024: Aspirin" → usageStartDate: "2024-01-15", usageEndDate: "2024-01-15" (cùng ngày nếu chỉ dùng 1 ngày)
    - "Aspirin 500mg" (không có ngày) → usageStartDate: null, usageEndDate: null
+
+⚠️ SAI LẦM THƯỜNG GẶP CẦN TRÁNH:
+❌ SAI: "Ngày 1,2,3/1/2024" → endDate: "2024-01-06" (sai vì không có ngày 6 trong văn bản)
+✅ ĐÚNG: "Ngày 1,2,3/1/2024" → endDate: "2024-01-03" (ngày cuối cùng được ghi)
+
+❌ SAI: Thuốc A dùng ngày 1-3/1, Thuốc B dùng ngày 4-6/1 → Báo overlap (SAI! Không chồng lấp)
+✅ ĐÚNG: Thuốc A (1-3/1) kết thúc trước khi Thuốc B (4-6/1) bắt đầu → KHÔNG overlap
 
 VÍ DỤ ICD-10:
 - "I10: Tăng huyết áp" → diagnosisMain: "Tăng huyết áp", icdCodes.main: "I10"

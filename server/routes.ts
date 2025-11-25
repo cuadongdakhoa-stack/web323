@@ -21,11 +21,12 @@ import {
   analyses,
   evidence,
   uploadedFiles,
+  drugFormulary,
   type Medication,
   type MedicationWithStatus,
   type DrugFormulary
 } from "@shared/schema";
-import { eq } from "drizzle-orm";
+import { eq, or, ilike, and, gte, lte, inArray } from "drizzle-orm";
 import { 
   analyzePatientCase,
   searchMedicalEvidence,
@@ -204,6 +205,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper function: Enrich medications with active ingredients from drug formulary
+  async function enrichMedicationsWithActiveIngredients(medications: any[]): Promise<any[]> {
+    if (!medications || medications.length === 0) return medications;
+
+    const enrichedMedications = await Promise.all(medications.map(async (med) => {
+      // Skip if already has activeIngredient
+      if (med.activeIngredient && med.activeIngredient.trim() !== '') {
+        return med;
+      }
+
+      // Try to find drug in formulary by tradeName (case-insensitive, fuzzy match)
+      try {
+        const tradeName = med.tradeName || med.name || '';
+        if (!tradeName.trim()) return med;
+
+        // Clean drug name: remove dosage, route, etc.
+        const cleanName = tradeName
+          .replace(/\s+\d+\s*(mg|g|ml|mcg|µg|IU|%)\b.*/i, '') // Remove "500mg", "10ml", etc.
+          .replace(/\s+(viên|ống|chai|lọ|túi|gói)\b.*/i, '') // Remove unit
+          .replace(/\s+(uống|tiêm|bôi|nhỏ)\b.*/i, '') // Remove route
+          .trim();
+
+        if (!cleanName) return med;
+
+        // Search in database (fuzzy match with ILIKE)
+        const foundDrugs = await db
+          .select()
+          .from(drugFormulary)
+          .where(
+            or(
+              ilike(drugFormulary.tradeName, `%${cleanName}%`),
+              ilike(drugFormulary.tradeName, cleanName)
+            )
+          )
+          .limit(1);
+
+        if (foundDrugs.length > 0) {
+          console.log(`[Enrichment] Found active ingredient for "${tradeName}": ${foundDrugs[0].activeIngredient}`);
+          return {
+            ...med,
+            activeIngredient: foundDrugs[0].activeIngredient,
+            // Also update strength and unit if missing
+            strength: med.strength || foundDrugs[0].strength,
+            unit: med.unit || foundDrugs[0].unit,
+          };
+        }
+
+        return med;
+      } catch (error) {
+        console.error(`[Enrichment Error] Failed to enrich medication "${med.tradeName}":`, error);
+        return med;
+      }
+    }));
+
+    return enrichedMedications;
+  }
+
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -284,6 +342,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       if (!extractedData || typeof extractedData !== 'object') {
         return res.status(500).json({ message: "AI không trả về dữ liệu hợp lệ" });
+      }
+
+      // ✨ ENRICH: Auto-fill activeIngredient from drug formulary database
+      if (extractedData.medications && Array.isArray(extractedData.medications)) {
+        console.log(`[Enrichment] Processing ${extractedData.medications.length} medications...`);
+        extractedData.medications = await enrichMedicationsWithActiveIngredients(extractedData.medications);
       }
 
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -1953,6 +2017,125 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.deleteReferenceDocument(req.params.id);
       res.json({ message: "Đã xóa tài liệu tham khảo" });
     } catch (error: any) {
+      res.status(500).json({ message: error.message });
+    }
+  });
+
+  // ============================================
+  // REPORTS API
+  // ============================================
+  app.get("/api/reports", requireAuth, async (req, res) => {
+    try {
+      const { type = 'monthly', month } = req.query;
+      const userId = req.user!.id;
+
+      // Parse month parameter (YYYY-MM)
+      let startDate: Date;
+      let endDate: Date;
+
+      if (month && typeof month === 'string') {
+        const [year, monthNum] = month.split('-').map(Number);
+        startDate = new Date(year, monthNum - 1, 1);
+        endDate = new Date(year, monthNum, 0, 23, 59, 59); // Last day of month
+      } else {
+        // Default to current month
+        const now = new Date();
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+        endDate = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+      }
+
+      // Fetch cases in date range
+      const cases = await db.select()
+        .from(schema.cases)
+        .where(
+          and(
+            eq(schema.cases.userId, userId),
+            gte(schema.cases.createdAt, startDate),
+            lte(schema.cases.createdAt, endDate)
+          )
+        );
+
+      // Fetch all medications for these cases
+      const caseIds = cases.map(c => c.id);
+      const medications = caseIds.length > 0
+        ? await db.select()
+            .from(schema.medications)
+            .where(inArray(schema.medications.caseId, caseIds))
+        : [];
+
+      // Calculate statistics
+      const totalCases = cases.length;
+      const totalMedications = medications.length;
+
+      // Count medication frequency
+      const medicationCounts = new Map<string, { count: number; activeIngredient: string | null }>();
+      for (const med of medications) {
+        const key = med.drugName;
+        if (!medicationCounts.has(key)) {
+          medicationCounts.set(key, { count: 0, activeIngredient: med.activeIngredient });
+        }
+        medicationCounts.get(key)!.count++;
+      }
+
+      // Top 10 medications
+      const topMedications = Array.from(medicationCounts.entries())
+        .map(([drugName, data]) => ({ drugName, ...data }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
+      // Fetch analyses to count interactions
+      const analyses = caseIds.length > 0
+        ? await db.select()
+            .from(schema.analyses)
+            .where(inArray(schema.analyses.caseId, caseIds))
+        : [];
+
+      let totalInteractions = 0;
+      let totalDoseAdjustments = 0;
+      const interactionCounts = new Map<string, number>();
+
+      for (const analysis of analyses) {
+        try {
+          const structured = typeof analysis.structuredAnalysis === 'string'
+            ? JSON.parse(analysis.structuredAnalysis)
+            : analysis.structuredAnalysis;
+
+          if (structured?.drugDrugInteractions) {
+            totalInteractions += structured.drugDrugInteractions.length;
+            for (const interaction of structured.drugDrugInteractions) {
+              const key = interaction.substring(0, 100); // Truncate for grouping
+              interactionCounts.set(key, (interactionCounts.get(key) || 0) + 1);
+            }
+          }
+
+          if (structured?.doseAdjustments) {
+            totalDoseAdjustments += structured.doseAdjustments.length;
+          }
+        } catch (e) {
+          // Skip invalid JSON
+        }
+      }
+
+      // Top interactions
+      const topInteractions = Array.from(interactionCounts.entries())
+        .map(([description, count]) => ({ description, count }))
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 10);
+
+      res.json({
+        totalCases,
+        totalMedications,
+        totalInteractions,
+        totalDoseAdjustments,
+        topMedications,
+        topInteractions,
+        period: {
+          start: startDate.toISOString(),
+          end: endDate.toISOString(),
+        },
+      });
+    } catch (error: any) {
+      console.error('[Reports Error]', error);
       res.status(500).json({ message: error.message });
     }
   });
