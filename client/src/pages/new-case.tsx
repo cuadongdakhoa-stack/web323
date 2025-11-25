@@ -10,6 +10,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { ArrowLeft, Upload, Save, Plus, Trash2, FileText, Loader2, X, Calendar, AlertCircle } from "lucide-react";
@@ -118,11 +119,15 @@ export default function NewCase() {
   });
 
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [selectedFilesLab, setSelectedFilesLab] = useState<File[]>([]);
+  const [selectedFilesPrescription, setSelectedFilesPrescription] = useState<File[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionProgress, setExtractionProgress] = useState(0);
   const [extractionStage, setExtractionStage] = useState("");
   const [formErrors, setFormErrors] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const fileInputRefLab = useRef<HTMLInputElement>(null);
+  const fileInputRefPrescription = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (draft) {
@@ -161,7 +166,7 @@ export default function NewCase() {
   }, [formData, medications, secondaryDiagnoses]);
 
   const uploadMutation = useMutation({
-    mutationFn: async (files: File[]) => {
+    mutationFn: async ({ files, fileGroup }: { files: File[]; fileGroup?: string }) => {
       const allExtractedData: any[] = [];
       const errors: string[] = [];
       const failedFiles: File[] = [];
@@ -193,6 +198,11 @@ export default function NewCase() {
             batch.forEach(file => {
               formData.append('files', file);
             });
+            
+            // Add fileGroup to FormData if provided
+            if (fileGroup) {
+              formData.append('fileGroup', fileGroup);
+            }
             
             // Stage 2: Sending to server (20-40%)
             setExtractionStage(`Đang gửi batch ${batchIndex + 1}/${batches.length} đến server...`);
@@ -422,13 +432,51 @@ export default function NewCase() {
     }
   };
 
+  const handleFileSelectLab = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      setSelectedFilesLab(prev => [...prev, ...Array.from(files)]);
+      if (fileInputRefLab.current) {
+        fileInputRefLab.current.value = "";
+      }
+    }
+  };
+
+  const handleFileSelectPrescription = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (files && files.length > 0) {
+      setSelectedFilesPrescription(prev => [...prev, ...Array.from(files)]);
+      if (fileInputRefPrescription.current) {
+        fileInputRefPrescription.current.value = "";
+      }
+    }
+  };
+
   const handleRemoveFile = (index: number) => {
     setSelectedFiles(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleAnalyze = () => {
-    if (selectedFiles.length > 0) {
-      uploadMutation.mutate(selectedFiles);
+  const handleRemoveFileLab = (index: number) => {
+    setSelectedFilesLab(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleRemoveFilePrescription = (index: number) => {
+    setSelectedFilesPrescription(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleAnalyze = async (fileGroup?: string) => {
+    let filesToAnalyze: File[] = [];
+    
+    if (fileGroup === 'admin') {
+      filesToAnalyze = selectedFiles;
+    } else if (fileGroup === 'lab') {
+      filesToAnalyze = selectedFilesLab;
+    } else if (fileGroup === 'prescription') {
+      filesToAnalyze = selectedFilesPrescription;
+    }
+
+    if (filesToAnalyze.length > 0) {
+      uploadMutation.mutate({ files: filesToAnalyze, fileGroup });
     }
   };
 
@@ -1210,61 +1258,11 @@ export default function NewCase() {
           <Card className="sticky top-6">
             <CardHeader>
               <CardTitle>Upload tài liệu</CardTitle>
-              <CardDescription>Tự động trích xuất thông tin từ file</CardDescription>
+              <CardDescription>
+                Upload riêng 3 loại: Bệnh án, Cận lâm sàng, Tờ điều trị
+              </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
-                onChange={handleFileSelect}
-                className="hidden"
-                multiple
-                data-testid="input-file-upload"
-              />
-              
-              {selectedFiles.length > 0 && (
-                <div className="space-y-2">
-                  <p className="text-sm font-medium">File đã chọn ({selectedFiles.length}):</p>
-                  {selectedFiles.map((file, index) => (
-                    <div 
-                      key={index}
-                      className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
-                    >
-                      <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm truncate">{file.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {(file.size / 1024).toFixed(1)} KB
-                        </p>
-                      </div>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => handleRemoveFile(index)}
-                        className="flex-shrink-0"
-                      >
-                        <X className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              <div 
-                className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
-                onClick={() => !uploadMutation.isPending && fileInputRef.current?.click()}
-                data-testid="upload-dropzone"
-              >
-                <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
-                <p className="text-sm text-muted-foreground mb-1">
-                  Click để chọn file
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  Hỗ trợ: PDF, DOC, DOCX, PPT, PPTX, JPG, PNG
-                </p>
-              </div>
-
               {isExtracting && (
                 <div className="space-y-3 p-4 border rounded-lg bg-muted/30 animate-in fade-in duration-300">
                   <div className="flex items-center gap-2">
@@ -1281,37 +1279,205 @@ export default function NewCase() {
                 </div>
               )}
 
-              <div className="flex gap-2">
-                {!uploadMutation.isPending && (
-                  <>
-                    <Button 
-                      variant="outline" 
-                      className="flex-1"
-                      onClick={() => fileInputRef.current?.click()}
-                      data-testid="button-choose-file"
-                    >
-                      <Plus className="w-4 h-4 mr-2" />
-                      Thêm file
-                    </Button>
-                    {selectedFiles.length > 0 && (
+              <Tabs defaultValue="admin" className="space-y-4">
+                <TabsList className="grid w-full grid-cols-3">
+                  <TabsTrigger value="admin">Bệnh án</TabsTrigger>
+                  <TabsTrigger value="lab">Cận lâm sàng</TabsTrigger>
+                  <TabsTrigger value="prescription">Tờ điều trị</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="admin" className="space-y-4">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    multiple
+                  />
+                  
+                  {selectedFiles.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">File đã chọn ({selectedFiles.length}):</p>
+                      {selectedFiles.map((file, index) => (
+                        <div 
+                          key={index}
+                          className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
+                        >
+                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(file.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveFile(index)}
+                            className="flex-shrink-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div 
+                    className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
+                    onClick={() => !uploadMutation.isPending && fileInputRef.current?.click()}
+                  >
+                    <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Click để chọn file Bệnh án
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Giấy nhập viện, hồ sơ bệnh án (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    {!uploadMutation.isPending && selectedFiles.length > 0 && (
                       <Button 
                         className="flex-1"
-                        onClick={handleAnalyze}
-                        data-testid="button-analyze"
+                        onClick={() => handleAnalyze('admin')}
                       >
                         <Upload className="w-4 h-4 mr-2" />
-                        Phân tích
+                        Phân tích Bệnh án
                       </Button>
                     )}
-                  </>
-                )}
-                {uploadMutation.isPending && (
-                  <div className="flex-1 flex items-center justify-center gap-2 text-sm text-muted-foreground">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    Đang phân tích {selectedFiles.length} file...
                   </div>
-                )}
-              </div>
+                </TabsContent>
+
+                <TabsContent value="lab" className="space-y-4">
+                  <input
+                    ref={fileInputRefLab}
+                    type="file"
+                    accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
+                    onChange={handleFileSelectLab}
+                    className="hidden"
+                    multiple
+                  />
+                  
+                  {selectedFilesLab.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">File đã chọn ({selectedFilesLab.length}):</p>
+                      {selectedFilesLab.map((file, index) => (
+                        <div 
+                          key={index}
+                          className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
+                        >
+                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(file.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveFileLab(index)}
+                            className="flex-shrink-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div 
+                    className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
+                    onClick={() => !uploadMutation.isPending && fileInputRefLab.current?.click()}
+                  >
+                    <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Click để chọn file Cận lâm sàng
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Xét nghiệm, chẩn đoán hình ảnh, creatinine (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    {!uploadMutation.isPending && selectedFilesLab.length > 0 && (
+                      <Button 
+                        className="flex-1"
+                        onClick={() => handleAnalyze('lab')}
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Phân tích Cận lâm sàng
+                      </Button>
+                    )}
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="prescription" className="space-y-4">
+                  <input
+                    ref={fileInputRefPrescription}
+                    type="file"
+                    accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
+                    onChange={handleFileSelectPrescription}
+                    className="hidden"
+                    multiple
+                  />
+                  
+                  {selectedFilesPrescription.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">File đã chọn ({selectedFilesPrescription.length}):</p>
+                      {selectedFilesPrescription.map((file, index) => (
+                        <div 
+                          key={index}
+                          className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
+                        >
+                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(file.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveFilePrescription(index)}
+                            className="flex-shrink-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div 
+                    className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
+                    onClick={() => !uploadMutation.isPending && fileInputRefPrescription.current?.click()}
+                  >
+                    <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Click để chọn file Tờ điều trị
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Đơn thuốc, y lệnh, tờ điều trị (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
+                    </p>
+                  </div>
+
+                  <div className="flex gap-2">
+                    {!uploadMutation.isPending && selectedFilesPrescription.length > 0 && (
+                      <Button 
+                        className="flex-1"
+                        onClick={() => handleAnalyze('prescription')}
+                      >
+                        <Upload className="w-4 h-4 mr-2" />
+                        Phân tích Tờ điều trị
+                      </Button>
+                    )}
+                  </div>
+                </TabsContent>
+              </Tabs>
             </CardContent>
           </Card>
         </div>
