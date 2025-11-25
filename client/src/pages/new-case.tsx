@@ -1216,7 +1216,7 @@ export default function NewCase() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept=".pdf,.docx,.doc,.jpg,.jpeg,.png"
+                accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
                 onChange={handleFileSelect}
                 className="hidden"
                 multiple
@@ -1261,7 +1261,7 @@ export default function NewCase() {
                   Click để chọn file
                 </p>
                 <p className="text-xs text-muted-foreground">
-                  Hỗ trợ: PDF, DOC, DOCX, JPG, PNG
+                  Hỗ trợ: PDF, DOC, DOCX, PPT, PPTX, JPG, PNG
                 </p>
               </div>
 

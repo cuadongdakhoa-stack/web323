@@ -189,12 +189,12 @@ export default function Library() {
                   name="file"
                   render={({ field: { value, onChange, ...fieldProps } }) => (
                     <FormItem>
-                      <FormLabel>File tài liệu (PDF hoặc DOCX)</FormLabel>
+                      <FormLabel>File tài liệu (PDF, DOC, DOCX, PPT, PPTX)</FormLabel>
                       <FormControl>
                         <Input
                           {...fieldProps}
                           type="file"
-                          accept=".pdf,.docx"
+                          accept=".pdf,.doc,.docx,.ppt,.pptx"
                           data-testid="input-file"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
@@ -203,7 +203,7 @@ export default function Library() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Tối đa 10MB, chỉ hỗ trợ PDF và DOCX
+                        Tối đa 10MB, hỗ trợ PDF, DOC, DOCX, PPT, PPTX
                       </FormDescription>
                       <FormMessage />
                     </FormItem>

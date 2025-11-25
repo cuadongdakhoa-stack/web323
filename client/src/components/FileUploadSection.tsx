@@ -68,15 +68,15 @@ const FILE_GROUP_LABELS: Record<string, string> = {
 };
 
 const FILE_GROUP_DESCRIPTIONS: Record<string, string> = {
-  admin: "Giấy tờ hành chính (PDF, DOC, DOCX, JPG, PNG)",
-  lab: "Kết quả xét nghiệm, chẩn đoán hình ảnh (PDF, DOC, DOCX, JPG, PNG)",
-  prescription: "Đơn thuốc, phiếu y lệnh (PDF, DOC, DOCX, JPG, PNG)",
+  admin: "Giấy tờ hành chính (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
+  lab: "Kết quả xét nghiệm, chẩn đoán hình ảnh (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
+  prescription: "Đơn thuốc, phiếu y lệnh (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
 };
 
 const FILE_GROUP_ACCEPTS: Record<string, string> = {
-  admin: ".pdf,.doc,.docx,.jpg,.jpeg,.png",
-  lab: ".pdf,.doc,.docx,.jpg,.jpeg,.png",
-  prescription: ".pdf,.doc,.docx,.jpg,.jpeg,.png",
+  admin: ".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png",
+  lab: ".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png",
+  prescription: ".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png",
 };
 
 function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
