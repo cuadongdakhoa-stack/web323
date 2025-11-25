@@ -217,59 +217,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/cases/extract", requireAuth, upload.single('file'), async (req, res) => {
+  app.post("/api/cases/extract", requireAuth, upload.array('files', 10), async (req, res) => {
     try {
-      if (!req.file) {
+      const files = req.files as Express.Multer.File[];
+      
+      if (!files || files.length === 0) {
         return res.status(400).json({ message: "Không có file được tải lên" });
       }
 
-      let textContent = "";
-      let fileType: "pdf" | "docx" = "pdf";
+      let combinedTextContent = "";
 
-      if (req.file.mimetype === 'application/pdf') {
-        fileType = "pdf";
-        
-        // Parse PDF using pdfjs-dist
-        try {
-          const loadingTask = pdfjsLib.getDocument({
-            data: new Uint8Array(req.file.buffer),
-            useSystemFonts: true,
-            disableFontFace: false,
-          });
+      // Process all files in the batch
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        let textContent = "";
+        let fileType: "pdf" | "docx" = "pdf";
+
+        if (file.mimetype === 'application/pdf') {
+          fileType = "pdf";
           
-          const pdfDocument = await loadingTask.promise;
-          const numPages = pdfDocument.numPages;
-          
-          // Extract text from all pages
-          for (let pageNum = 1; pageNum <= numPages; pageNum++) {
-            const page = await pdfDocument.getPage(pageNum);
-            const textData = await page.getTextContent();
-            const pageText = textData.items.map((item: any) => item.str).join(' ');
-            textContent += pageText + '\n';
+          // Parse PDF using pdfjs-dist
+          try {
+            const loadingTask = pdfjsLib.getDocument({
+              data: new Uint8Array(file.buffer),
+              useSystemFonts: true,
+              disableFontFace: false,
+            });
+            
+            const pdfDocument = await loadingTask.promise;
+            const numPages = pdfDocument.numPages;
+            
+            // Extract text from all pages
+            for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+              const page = await pdfDocument.getPage(pageNum);
+              const textData = await page.getTextContent();
+              const pageText = textData.items.map((item: any) => item.str).join(' ');
+              textContent += pageText + '\n';
+            }
+          } catch (pdfError) {
+            console.error('[PDF Parse Error]', pdfError);
+            return res.status(500).json({ message: `Không thể đọc file PDF: ${file.originalname}` });
           }
-        } catch (pdfError) {
-          console.error('[PDF Parse Error]', pdfError);
-          return res.status(500).json({ message: "Không thể đọc file PDF. Vui lòng thử lại." });
+          
+        } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+          fileType = "docx";
+          const result = await mammoth.extractRawText({ buffer: file.buffer });
+          textContent = result.value;
+        } else {
+          return res.status(400).json({ message: `Định dạng file không được hỗ trợ: ${file.originalname}` });
         }
-        
-      } else if (req.file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-        fileType = "docx";
-        const result = await mammoth.extractRawText({ buffer: req.file.buffer });
-        textContent = result.value;
-      } else {
-        return res.status(400).json({ message: "Định dạng file không được hỗ trợ" });
+
+        if (!textContent || textContent.trim().length === 0) {
+          return res.status(400).json({ message: `File rỗng hoặc không thể trích xuất nội dung: ${file.originalname}` });
+        }
+
+        // Add file separator
+        combinedTextContent += `\n\n=== FILE ${i + 1}: ${file.originalname} ===\n${textContent}`;
       }
 
-      if (!textContent || textContent.trim().length === 0) {
-        return res.status(400).json({ message: "File rỗng hoặc không thể trích xuất nội dung" });
-      }
-
-      if (textContent.trim().length < 50) {
+      if (combinedTextContent.trim().length < 50) {
         return res.status(400).json({ message: "Nội dung file quá ngắn, không đủ thông tin để trích xuất" });
       }
 
-      // Send extracted text to DeepSeek AI
-      const extractedData = await extractDataFromDocument(textContent, fileType);
+      // Send combined text to GPT-4 AI (single API call for all files)
+      const extractedData = await extractDataFromDocument(combinedTextContent, "pdf");
       
       if (!extractedData || typeof extractedData !== 'object') {
         return res.status(500).json({ message: "AI không trả về dữ liệu hợp lệ" });
@@ -862,7 +873,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         caseId: req.params.id,
         analysisType: "patient_case",
         result: analysisResult,
-        model: "deepseek-chat",
+        model: "gpt-4o",
         status: "completed",
       });
 
@@ -890,7 +901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           caseId: req.params.id,
           analysisType: "patient_case",
           result: {},
-          model: "deepseek-chat",
+          model: "gpt-4o",
           status: "failed",
           error: error.message,
         });
@@ -1336,7 +1347,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         caseId,
         analysisType: "clinical_analysis",
         result: analysisResult,
-        model: "deepseek-chat",
+        model: "gpt-4o",
         status: "completed",
       });
 

@@ -70,8 +70,11 @@ const clinicalAnalysisSchema = z.object({
 });
 
 const MODELS = {
-  DEEPSEEK: "deepseek/deepseek-chat",
+  GPT4: "openai/gpt-4o",  // GPT-4 Optimized for better accuracy
   PERPLEXITY: "perplexity/sonar-pro",
+  // Fallback options:
+  // DEEPSEEK: "deepseek/deepseek-chat",
+  // GPT35: "openai/gpt-3.5-turbo",
 };
 
 interface ChatMessage {
@@ -162,13 +165,13 @@ async function callOpenRouter(
   }
 }
 
-export async function callDeepSeek(
+export async function callGPT4(
   systemPrompt: string,
   userPrompt: string,
   temperature: number = 0.7
 ): Promise<string> {
   return callOpenRouter(
-    MODELS.DEEPSEEK,
+    MODELS.GPT4,
     [
       { role: "system", content: systemPrompt },
       { role: "user", content: userPrompt },
@@ -385,7 +388,7 @@ Lưu ý:
 - KHÔNG dùng markdown (**, *, #) trong nội dung
 - drugDrugInteractionGroups: CHỈ điền nếu phân tích ban đầu có nhóm thuốc theo thời gian`;
 
-  const finalAnalysisRaw = await callDeepSeek(
+  const finalAnalysisRaw = await callGPT4(
     deepseekVerificationSystemPrompt,
     deepseekVerificationUserPrompt,
     0.5
@@ -555,7 +558,7 @@ Lưu ý:
 - drugDrugInteractions: Tương tác chung (backward compatibility)
 - drugDrugInteractionGroups: Tương tác phân nhóm theo thời gian (CHỈ điền nếu có >= 2 nhóm thuốc theo timeline)`;
 
-  const rawAnalysis = await callDeepSeek(systemPrompt, userPrompt);
+  const rawAnalysis = await callGPT4(systemPrompt, userPrompt);
   
   let initialAnalysis: any;
   try {
@@ -727,7 +730,7 @@ LƯU Ý:
 - patientInfo.diagnosisMain: Chẩn đoán chính + mã ICD (nếu có)
 - patientInfo.diagnosisSecondary: Mảng các chẩn đoán phụ + mã ICD`;
 
-  const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.5);
+  const rawResult = await callGPT4(systemPrompt, userPrompt, 0.2);
   
   try {
     let jsonString = rawResult.trim();
@@ -877,23 +880,24 @@ ${context.caseData.allergies ? `⚠️ Dị ứng: ${context.caseData.allergies}
 
   messages.push({ role: "user", content: userPrompt });
 
-  return callOpenRouter(MODELS.DEEPSEEK, messages, 0.4);
+  return callOpenRouter(MODELS.GPT4, messages, 0.4);
 }
 
 export async function extractDataFromDocument(
   textContent: string,
   fileType: "pdf" | "docx"
 ): Promise<any> {
-  const systemPrompt = `Bạn là chuyên gia trích xuất dữ liệu y tế từ tài liệu bệnh án. QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích hay markdown. Response phải bắt đầu bằng { và kết thúc bằng }.`;
+  const systemPrompt = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.`;
 
-  const userPrompt = `Trích xuất thông tin từ tài liệu ${fileType.toUpperCase()} sau và TRẢ VỀ CHỈ JSON (không có markdown, không có text khác):
+  const userPrompt = `Trích xuất và TỔNG HỢP từ ${fileType.toUpperCase()}. Có thể có NHIỀU FILE (ngăn cách bởi === FILE X: ===). TỔNG HỢP tất cả thông tin từ TẤT CẢ các file. Nếu có xung đột → ưu tiên file mới nhất. TRẢ VỀ CHỈ JSON thuần:
 
 ${textContent}
 
-NGUYÊN TẮC QUAN TRỌNG NHẤT:
-⚠️ CHỈ TRÍCH XUẤT THÔNG TIN CÓ TRONG TÀI LIỆU - TUYỆT ĐỐI KHÔNG BỊA RA THÔNG TIN
-⚠️ Nếu không tìm thấy thông tin → trả về null (KHÔNG đoán, KHÔNG suy luận)
-⚠️ ĐỌC KỸ TOÀN BỘ TÀI LIỆU - KHÔNG BỎ SÓT THÔNG TIN QUAN TRỌNG
+QUY TẮC:
+⚠️ CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
+⚠️ Không có thông tin → null
+⚠️ ĐỌC KỸ TOÀN BỘ TẤT CẢ FILE - không bỏ sót
+⚠️ TỔNG HỢP thông tin từ nhiều file (ví dụ: file 1 có tuổi, file 2 có thuốc → gộp cả 2)
 
 HƯỚNG DẪN TRÍCH XUẤT CHẨN ĐOÁN (CỰC KỲ QUAN TRỌNG):
 - Phân tách rõ CHẨN ĐOÁN CHÍNH (diagnosisMain) và BỆNH KÈM (diagnosisSecondary)
@@ -910,6 +914,15 @@ VÍ DỤ BẢNG KÊ:
   → icdCodes.main: "E11"
   → diagnosisSecondary: ["Rối loạn chuyển hóa lipoprotein", "Viêm giáp", "Xơ vữa động mạch"]
   → icdCodes.secondary: ["E78", "K21", "M10"]
+
+- Input: "(17) Viêm gan mãn, không phân loại nơi khác;Các thể loại đái tháo đường không xác định;Rối loạn chuyển hóa lipoprotein;Gút (thống phong);Phù, chưa phân loại nơi khác;Tăng sản tuyến tiền liệt;Các bệnh phổi tắc nghẽn mãn tính khác (18) K73;E14;E78;M10;R60;N40;J44"
+  → diagnosisSecondary: ["Viêm gan mãn, không phân loại nơi khác", "Các thể loại đái tháo đường không xác định", "Rối loạn chuyển hóa lipoprotein", "Gút (thống phong)", "Phù, chưa phân loại nơi khác", "Tăng sản tuyến tiền liệt", "Các bệnh phổi tắc nghẽn mãn tính khác"]
+  → icdCodes.secondary: ["K73", "E14", "E78", "M10", "R60", "N40", "J44"]
+
+⚠️ LƯU Ý: 
+- MỖI BỆNH CHỈ GHI 1 LẦN, không duplicate
+- Tách chính xác theo dấu chấm phẩy (;) hoặc dấu phẩy (,)
+- Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary
 
 - Ví dụ text tự do: "Chẩn đoán: Viêm phổi (J18.9). Bệnh kèm: Tăng huyết áp (I10), Đái tháo đường (E11.9)"
   → diagnosisMain: "Viêm phổi", icdCodes.main: "J18.9"
@@ -952,16 +965,25 @@ VÍ DỤ ICD-10:
 - "I10: Tăng huyết áp" → diagnosisMain: "Tăng huyết áp", icdCodes.main: "I10"
 - "E11.9: Đái tháo đường type 2" → diagnosisMain: "Đái tháo đường type 2", icdCodes.main: "E11.9"
 
-VÍ DỤ CREATININE:
+VÍ DỤ TUỔI VÀ GIỚI TÍNH:
+- "65 tuổi" → patientAge: 65
+- "Nam" hoặc "Male" hoặc "M" → patientGender: "Nam"
+- "Nữ" hoặc "Female" hoặc "F" → patientGender: "Nữ"
+- "BN 72t" → patientAge: 72
+
+VÍ DỤ CREATININE (⚠️ ĐỪNG NHẦM VỚI GIÁ TIỀN):
 - "Creatinine: 1.2 mg/dL" → labResults: { creatinine: 1.2, creatinineUnit: "mg/dL" }
-- "SCr 106 micromol/L" → labResults: { creatinine: 106, creatinineUnit: "micromol/L" }
+- "SCr 106 micromol/L" hoặc "Creatinine 106 µmol/L" → labResults: { creatinine: 106, creatinineUnit: "micromol/L" }
+- "Định lượng Creatinin (máu) 91,39 µmol/L" → labResults: { creatinine: 91.39, creatinineUnit: "micromol/L" }
 - "Creatinine máu 0.9" → labResults: { creatinine: 0.9, creatinineUnit: "mg/dL" } (mặc định mg/dL nếu không ghi rõ)
+- ⚠️ TRÁNH: "Creatinine 22,400" trong bảng kê → đó là GIÁ TIỀN, KHÔNG PHẢI KẾT QUẢ XÉT NGHIỆM
+- ⚠️ QUAN TRỌNG: NẾU KHÔNG TÌM THẤY KẾT QUẢ CREATININE THÌ ĐỂ null, KHÔNG ĐOÁN
 
 JSON format (⚠️ NẾU THIẾU THÔNG TIN THÌ ĐỂ null - KHÔNG BỊA):
 {
   "patientName": "string hoặc null",
-  "patientAge": number hoặc null,
-  "patientGender": "string hoặc null",
+  "patientAge": number hoặc null (⚠️ CHỈ điền khi tìm thấy tuổi rõ ràng),
+  "patientGender": "Nam" hoặc "Nữ" hoặc null (⚠️ CHỈ điền khi tìm thấy giới tính rõ ràng),
   "patientWeight": number hoặc null,
   "patientHeight": number hoặc null,
   "admissionDate": "YYYY-MM-DD hoặc null (ngày nhập viện)",
@@ -983,19 +1005,30 @@ JSON format (⚠️ NẾU THIẾU THÔNG TIN THÌ ĐỂ null - KHÔNG BỊA):
   
   "medications": [
     {
-      "drugName": "tên thuốc",
-      "dose": "liều lượng hoặc null",
-      "frequency": "tần suất hoặc null",
-      "route": "đường dùng hoặc null",
+      "drugName": "tên thuốc chính xác (ví dụ: Seretide Evohaler DC 25/125mcg)",
+      "dose": "liều lượng (ví dụ: 2 nhát, 10mg, 0.4mg) hoặc null",
+      "frequency": "tần suất (ví dụ: Ngày 2 lần mỗi lần 2 nhát 8h-20h, Sáng 1 viên tối 1 viên, Tối 1 viên) hoặc null",
+      "route": "đường dùng - PHẢI CHÍNH XÁC (Uống, Hít, Tiêm tĩnh mạch, Tiêm bắp, Bôi da, Nhỏ mắt, Đặt hậu môn) hoặc null",
       "usageStartDate": "YYYY-MM-DD hoặc null",
       "usageEndDate": "YYYY-MM-DD hoặc null"
     }
   ] hoặc null
+
+⚠️ LƯU Ý VỀ ĐƯỜNG DÙNG (route):
+- "HÍT" hoặc "EVOHALER" hoặc "INHALER" → route: "Hít"
+- "UỐNG" hoặc "ORAL" hoặc "PO" hoặc "Viên" → route: "Uống"
+- "TIÊM" hoặc "IV" hoặc "IM" → route: "Tiêm tĩnh mạch" hoặc "Tiêm bắp"
+- Ví dụ: "Seretide Evohaler DC 25/125mcg HÍT NGÀY 2 LẦN" → route: "Hít", frequency: "Ngày 2 lần, mỗi lần 2 nhát (8h, 20h)"
+
+⚠️ LƯU Ý VỀ LIỀU LƯỢNG:
+- "Tamsulosin 0,4mg" → dose: "0.4mg" (KHÔNG PHẢI 4mg)
+- "Attapulgit 2,5g + 0,3g + 0,2g" → dose: "2.5g + 0.3g + 0.2g"
+- "2 nhát" → dose: "2 nhát"
 }
 
 CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
 
-  const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.3);
+  const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);  // Temperature thấp = chính xác hơn
   
   try {
     const cleanedResult = rawResult.trim()
@@ -1080,7 +1113,7 @@ Trả về JSON (QUAN TRỌNG: CHỈ JSON, không thêm text khác):
 }`;
 
   try {
-    const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.3);
+    const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);
     const cleanedResult = rawResult.trim()
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
@@ -1150,7 +1183,7 @@ YÊU CẦU:
 LƯU Ý: tradeName và activeIngredient là BẮT BUỘC, các trường khác có thể null nếu không có.`;
 
   try {
-    const rawResult = await callDeepSeek(systemPrompt, userPrompt, 0.3);
+    const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);
     const cleanedResult = rawResult.trim()
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')

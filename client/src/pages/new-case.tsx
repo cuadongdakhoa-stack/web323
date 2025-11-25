@@ -95,6 +95,7 @@ export default function NewCase() {
   };
 
   const draft = loadDraft();
+  const [hasDraft, setHasDraft] = useState(!!draft);
   
   const [formData, setFormData] = useState(draft?.formData || INITIAL_FORM_DATA);
 
@@ -170,22 +171,32 @@ export default function NewCase() {
         setExtractionProgress(0);
         
         const totalFiles = files.length;
+        const BATCH_SIZE = 10;
         
-        for (let i = 0; i < files.length; i++) {
-          const file = files[i];
-          const fileProgress = (i / totalFiles) * 100;
+        // Split files into batches of 10
+        const batches: File[][] = [];
+        for (let i = 0; i < files.length; i += BATCH_SIZE) {
+          batches.push(files.slice(i, i + BATCH_SIZE));
+        }
+        
+        for (let batchIndex = 0; batchIndex < batches.length; batchIndex++) {
+          const batch = batches[batchIndex];
+          const batchProgress = (batchIndex / batches.length) * 100;
           
           try {
-            // Stage 1: Upload (0-20% of this file's portion)
-            setExtractionStage(`Đang tải lên file ${i + 1}/${totalFiles}: ${file.name}`);
-            setExtractionProgress(fileProgress + 5);
+            // Stage 1: Upload batch (0-20% of this batch's portion)
+            const fileNames = batch.map(f => f.name).join(', ');
+            setExtractionStage(`Đang tải lên ${batch.length} file (batch ${batchIndex + 1}/${batches.length})`);
+            setExtractionProgress(batchProgress + 5);
             
             const formData = new FormData();
-            formData.append('file', file);
+            batch.forEach(file => {
+              formData.append('files', file);
+            });
             
             // Stage 2: Sending to server (20-40%)
-            setExtractionStage(`Đang gửi file ${i + 1}/${totalFiles} đến server...`);
-            setExtractionProgress(fileProgress + 10);
+            setExtractionStage(`Đang gửi batch ${batchIndex + 1}/${batches.length} đến server...`);
+            setExtractionProgress(batchProgress + 10);
             
             const response = await fetch('/api/cases/extract', {
               method: 'POST',
@@ -195,30 +206,34 @@ export default function NewCase() {
 
             if (!response.ok) {
               const error = await response.json();
-              errors.push(`${file.name}: ${error.message || 'Upload failed'}`);
-              failedFiles.push(file);
-              setExtractionProgress(fileProgress + (100 / totalFiles));
+              batch.forEach(file => {
+                errors.push(`${file.name}: ${error.message || 'Upload failed'}`);
+                failedFiles.push(file);
+              });
+              setExtractionProgress(batchProgress + (100 / batches.length));
               continue;
             }
 
             // Stage 3: AI Processing (40-90%)
-            setExtractionStage(`Đang phân tích file ${i + 1}/${totalFiles} bằng AI...`);
-            setExtractionProgress(fileProgress + 50);
+            setExtractionStage(`Đang phân tích batch ${batchIndex + 1}/${batches.length} bằng GPT-4...`);
+            setExtractionProgress(batchProgress + 50);
             
             const data = await response.json();
             
             // Stage 4: Extracting data (90-100%)
-            setExtractionStage(`Đang trích xuất dữ liệu từ file ${i + 1}/${totalFiles}...`);
-            setExtractionProgress(fileProgress + 80);
+            setExtractionStage(`Đang trích xuất dữ liệu từ batch ${batchIndex + 1}/${batches.length}...`);
+            setExtractionProgress(batchProgress + 80);
             
             allExtractedData.push(data);
             
-            // Complete this file
-            setExtractionProgress(fileProgress + (100 / totalFiles));
+            // Complete this batch
+            setExtractionProgress(batchProgress + (100 / batches.length));
           } catch (error: any) {
-            errors.push(`${file.name}: ${error.message || 'Lỗi không xác định'}`);
-            failedFiles.push(file);
-            setExtractionProgress(fileProgress + (100 / totalFiles));
+            batch.forEach(file => {
+              errors.push(`${file.name}: ${error.message || 'Lỗi không xác định'}`);
+              failedFiles.push(file);
+            });
+            setExtractionProgress(batchProgress + (100 / batches.length));
           }
         }
         
@@ -266,16 +281,16 @@ export default function NewCase() {
           return {
             ...prev,
             patientName: smartMerge(data.patientName, prev.patientName),
-            patientAge: smartMerge(data.patientAge?.toString(), prev.patientAge),
+            patientAge: data.patientAge ? smartMerge(data.patientAge.toString(), prev.patientAge) : prev.patientAge,
             patientGender: smartMerge(data.patientGender, prev.patientGender),
-            patientWeight: smartMerge(data.patientWeight?.toString(), prev.patientWeight),
-            patientHeight: smartMerge(data.patientHeight?.toString(), prev.patientHeight),
+            patientWeight: data.patientWeight ? smartMerge(data.patientWeight.toString(), prev.patientWeight) : prev.patientWeight,
+            patientHeight: data.patientHeight ? smartMerge(data.patientHeight.toString(), prev.patientHeight) : prev.patientHeight,
             admissionDate: smartMerge(data.admissionDate, prev.admissionDate),
             diagnosisMain: smartMerge(data.diagnosisMain || data.diagnosis, prev.diagnosisMain),
             diagnosisMainIcd: smartMerge(data.icdCodes?.main, prev.diagnosisMainIcd),
             medicalHistory: smartMerge(data.medicalHistory, prev.medicalHistory),
             allergies: smartMerge(data.allergies, prev.allergies),
-            creatinine: smartMerge(data.labResults?.creatinine?.toString(), prev.creatinine),
+            creatinine: (data.labResults?.creatinine !== null && data.labResults?.creatinine !== undefined) ? smartMerge(data.labResults.creatinine.toString(), prev.creatinine) : prev.creatinine,
             creatinineUnit: smartMerge(data.labResults?.creatinineUnit, prev.creatinineUnit),
           };
         });
@@ -558,6 +573,18 @@ export default function NewCase() {
     }
   };
 
+  const clearDraft = () => {
+    localStorage.removeItem(AUTOSAVE_KEY);
+    setFormData(INITIAL_FORM_DATA);
+    setSecondaryDiagnoses([]);
+    setMedications([]);
+    setHasDraft(false);
+    toast({
+      title: "Đã xóa bản nháp",
+      description: "Bạn có thể bắt đầu tạo ca bệnh mới",
+    });
+  };
+
   const validateMedForm = (): boolean => {
     const errors: Record<string, string> = {};
     
@@ -593,6 +620,25 @@ export default function NewCase() {
 
   return (
     <div className="p-8 max-w-6xl mx-auto">
+      {hasDraft && (
+        <Alert className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Đã tìm thấy bản nháp</AlertTitle>
+          <AlertDescription className="flex items-center justify-between">
+            <span>Dữ liệu form đã được tự động lưu trước đó. Bạn có thể tiếp tục chỉnh sửa hoặc xóa để bắt đầu mới.</span>
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={clearDraft}
+              className="ml-4"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Xóa nháp
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+      
       <div className="mb-6">
         <Button variant="ghost" asChild className="mb-4">
           <Link href="/cases">
