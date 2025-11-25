@@ -1,18 +1,18 @@
-import { callDeepSeek, callPerplexity } from "./openrouter";
+import { callGPT4, callPerplexity } from "./openrouter";
 
 async function testOpenRouterAPIs() {
   console.log("🧪 Testing OpenRouter API connections...\n");
 
   try {
-    console.log("1️⃣ Testing DeepSeek API...");
-    const deepseekResponse = await callDeepSeek(
+    console.log("1️⃣ Testing GPT-4 API...");
+    const gpt4Response = await callGPT4(
       "Bạn là trợ lý AI",
       "Xin chào! Giới thiệu ngắn gọn về bạn."
     );
-    console.log("✅ DeepSeek working!");
-    console.log("Response:", deepseekResponse.substring(0, 100) + "...\n");
+    console.log("✅ GPT-4 working!");
+    console.log("Response:", gpt4Response.substring(0, 100) + "...\n");
   } catch (error: any) {
-    console.error("❌ DeepSeek failed:", error.message, "\n");
+    console.error("❌ GPT-4 failed:", error.message, "\n");
   }
 
   try {

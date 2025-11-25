@@ -315,7 +315,7 @@ export default function DrugFormularyPage() {
               <Label>File Excel/CSV</Label>
               <Input
                 type="file"
-                accept=".xlsx,.xls,.csv"
+                accept=".xlsx,.xls,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv"
                 onChange={(e) => setSelectedFile(e.target.files?.[0] || null)}
                 data-testid="input-file-upload"
               />

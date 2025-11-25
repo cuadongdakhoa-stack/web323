@@ -480,6 +480,35 @@ export default function NewCase() {
     }
   };
 
+  const handleAnalyzeAll = async () => {
+    // Phân tích lần lượt: Bệnh án → Cận lâm sàng → Tờ điều trị
+    const analysisQueue = [];
+    
+    if (selectedFiles.length > 0) {
+      analysisQueue.push({ files: selectedFiles, fileGroup: 'admin' });
+    }
+    if (selectedFilesLab.length > 0) {
+      analysisQueue.push({ files: selectedFilesLab, fileGroup: 'lab' });
+    }
+    if (selectedFilesPrescription.length > 0) {
+      analysisQueue.push({ files: selectedFilesPrescription, fileGroup: 'prescription' });
+    }
+
+    if (analysisQueue.length === 0) {
+      toast({
+        variant: "destructive",
+        title: "Chưa có file",
+        description: "Vui lòng upload ít nhất 1 loại tài liệu",
+      });
+      return;
+    }
+
+    // Run sequentially
+    for (const item of analysisQueue) {
+      await uploadMutation.mutateAsync(item);
+    }
+  };
+
   const createCaseMutation = useMutation({
     mutationFn: async (data: { caseData: any; medications: Medication[]; secondaryDiagnoses: SecondaryDiagnosis[] }) => {
       const icdCodes = {
@@ -1336,18 +1365,6 @@ export default function NewCase() {
                       Giấy nhập viện, hồ sơ bệnh án (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
                     </p>
                   </div>
-
-                  <div className="flex gap-2">
-                    {!uploadMutation.isPending && selectedFiles.length > 0 && (
-                      <Button 
-                        className="flex-1"
-                        onClick={() => handleAnalyze('admin')}
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Phân tích Bệnh án
-                      </Button>
-                    )}
-                  </div>
                 </TabsContent>
 
                 <TabsContent value="lab" className="space-y-4">
@@ -1399,18 +1416,6 @@ export default function NewCase() {
                     <p className="text-xs text-muted-foreground">
                       Xét nghiệm, chẩn đoán hình ảnh, creatinine (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
                     </p>
-                  </div>
-
-                  <div className="flex gap-2">
-                    {!uploadMutation.isPending && selectedFilesLab.length > 0 && (
-                      <Button 
-                        className="flex-1"
-                        onClick={() => handleAnalyze('lab')}
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Phân tích Cận lâm sàng
-                      </Button>
-                    )}
                   </div>
                 </TabsContent>
 
@@ -1464,20 +1469,25 @@ export default function NewCase() {
                       Đơn thuốc, y lệnh, tờ điều trị (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
                     </p>
                   </div>
-
-                  <div className="flex gap-2">
-                    {!uploadMutation.isPending && selectedFilesPrescription.length > 0 && (
-                      <Button 
-                        className="flex-1"
-                        onClick={() => handleAnalyze('prescription')}
-                      >
-                        <Upload className="w-4 h-4 mr-2" />
-                        Phân tích Tờ điều trị
-                      </Button>
-                    )}
-                  </div>
                 </TabsContent>
               </Tabs>
+
+              {/* Nút phân tích tất cả - hiện khi có ít nhất 1 loại file */}
+              {!uploadMutation.isPending && (selectedFiles.length > 0 || selectedFilesLab.length > 0 || selectedFilesPrescription.length > 0) && (
+                <div className="pt-2">
+                  <Button 
+                    className="w-full"
+                    size="lg"
+                    onClick={handleAnalyzeAll}
+                  >
+                    <Upload className="w-4 h-4 mr-2" />
+                    Phân tích tất cả ({[selectedFiles.length > 0 && 'Bệnh án', selectedFilesLab.length > 0 && 'Cận lâm sàng', selectedFilesPrescription.length > 0 && 'Tờ điều trị'].filter(Boolean).join(' → ')})
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center mt-2">
+                    Phân tích lần lượt: Bệnh án → Cận lâm sàng → Tờ điều trị
+                  </p>
+                </div>
+              )}
             </CardContent>
           </Card>
         </div>
