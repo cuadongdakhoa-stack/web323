@@ -1913,12 +1913,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
         'application/msword', // .doc
         'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
-        'application/vnd.ms-powerpoint' // .ppt
+        'application/vnd.ms-powerpoint', // .ppt
+        'application/vnd.ms-excel', // .xls
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' // .xlsx
       ];
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('Chỉ chấp nhận file PDF, DOC, DOCX, PPT, PPTX'));
+        cb(new Error('Chỉ chấp nhận file PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX'));
       }
     }
   });
@@ -1990,6 +1992,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ) {
           // Parse DOC, PPTX, PPT using officeParser
           extractedText = await officeParser.parseOfficeAsync(file.buffer);
+        } else if (
+          file.mimetype === 'application/vnd.ms-excel' ||
+          file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        ) {
+          // Parse Excel files
+          const workbook = XLSX.read(file.buffer, { type: 'buffer' });
+          const sheetName = workbook.SheetNames[0];
+          if (sheetName) {
+            const sheet = workbook.Sheets[sheetName];
+            extractedText = XLSX.utils.sheet_to_csv(sheet);
+          }
         }
         
         if (!extractedText || extractedText.trim().length === 0) {

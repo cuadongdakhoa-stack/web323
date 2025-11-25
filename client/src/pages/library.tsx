@@ -189,12 +189,12 @@ export default function Library() {
                   name="file"
                   render={({ field: { value, onChange, ...fieldProps } }) => (
                     <FormItem>
-                      <FormLabel>File tài liệu (PDF, DOC, DOCX, PPT, PPTX)</FormLabel>
+                      <FormLabel>File tài liệu (PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX)</FormLabel>
                       <FormControl>
                         <Input
                           {...fieldProps}
                           type="file"
-                          accept=".pdf,.doc,.docx,.ppt,.pptx"
+                          accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                           data-testid="input-file"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
@@ -203,7 +203,7 @@ export default function Library() {
                         />
                       </FormControl>
                       <FormDescription>
-                        Tối đa 10MB, hỗ trợ PDF, DOC, DOCX, PPT, PPTX
+                        Tối đa 10MB, hỗ trợ PDF, DOC, DOCX, PPT, PPTX, XLS, XLSX
                       </FormDescription>
                       <FormMessage />
                     </FormItem>
