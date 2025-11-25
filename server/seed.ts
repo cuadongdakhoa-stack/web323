@@ -36,6 +36,13 @@ const FIXED_USERS = [
     fullName: "Bác sĩ Phạm Thị D",
     role: "doctor",
     department: "Khoa Hồi sức cấp cứu"
+  },
+  {
+    username: "demo",
+    password: "demo123",
+    fullName: "Tài khoản Demo",
+    role: "pharmacist",
+    department: "Demo - Khách hàng"
   }
 ];
 
