@@ -41,6 +41,7 @@ import { generatePDF, generateDOCX } from "./reportExport";
 import { calculateEGFR, extractCreatinine } from "./egfrCalculator";
 import multer from "multer";
 import mammoth from "mammoth";
+import officeParser from "officeparser";
 import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs';
 import * as XLSX from 'xlsx';
 import fs from 'fs';
@@ -266,11 +267,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 },
     fileFilter: (req, file, cb) => {
-      const allowedTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+      const allowedTypes = [
+        'application/pdf',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+        'application/msword', // .doc
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+        'application/vnd.ms-powerpoint' // .ppt
+      ];
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('Chỉ chấp nhận file PDF hoặc DOCX'));
+        cb(new Error('Chỉ chấp nhận file PDF, DOC, DOCX, PPT, PPTX'));
       }
     }
   });
@@ -289,11 +296,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         let textContent = "";
-        let fileType: "pdf" | "docx" = "pdf";
 
         if (file.mimetype === 'application/pdf') {
-          fileType = "pdf";
-          
           // Parse PDF using pdfjs-dist
           try {
             const loadingTask = pdfjsLib.getDocument({
@@ -318,9 +322,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
         } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
-          fileType = "docx";
-          const result = await mammoth.extractRawText({ buffer: file.buffer });
-          textContent = result.value;
+          // Parse DOCX using mammoth
+          try {
+            const result = await mammoth.extractRawText({ buffer: file.buffer });
+            textContent = result.value;
+          } catch (docxError) {
+            console.error('[DOCX Parse Error]', docxError);
+            return res.status(500).json({ message: `Không thể đọc file DOCX: ${file.originalname}` });
+          }
+        } else if (
+          file.mimetype === 'application/msword' ||
+          file.mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+          file.mimetype === 'application/vnd.ms-powerpoint'
+        ) {
+          // Parse DOC, PPTX, PPT using officeParser
+          try {
+            textContent = await officeParser.parseOfficeAsync(file.buffer);
+          } catch (officeError) {
+            console.error('[Office Parse Error]', officeError);
+            return res.status(500).json({ message: `Không thể đọc file ${file.originalname}. Vui lòng thử lại hoặc convert sang PDF.` });
+          }
         } else {
           return res.status(400).json({ message: `Định dạng file không được hỗ trợ: ${file.originalname}` });
         }
@@ -528,14 +549,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fileFilter: (req, file, cb) => {
       const allowedTypes = [
         'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+        'application/msword', // .doc
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+        'application/vnd.ms-powerpoint', // .ppt
         'image/jpeg',
         'image/png'
       ];
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('Chỉ chấp nhận file PDF, DOCX, JPG, hoặc PNG'));
+        cb(new Error('Chỉ chấp nhận file PDF, DOC, DOCX, PPT, PPTX, JPG, PNG'));
       }
     }
   });
@@ -1886,12 +1910,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     fileFilter: (req, file, cb) => {
       const allowedTypes = [
         'application/pdf',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
+        'application/msword', // .doc
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
+        'application/vnd.ms-powerpoint' // .ppt
       ];
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('Chỉ chấp nhận file PDF hoặc DOCX'));
+        cb(new Error('Chỉ chấp nhận file PDF, DOC, DOCX, PPT, PPTX'));
       }
     }
   });
@@ -1956,6 +1983,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
           const result = await mammoth.extractRawText({ buffer: file.buffer });
           extractedText = result.value;
+        } else if (
+          file.mimetype === 'application/msword' ||
+          file.mimetype === 'application/vnd.openxmlformats-officedocument.presentationml.presentation' ||
+          file.mimetype === 'application/vnd.ms-powerpoint'
+        ) {
+          // Parse DOC, PPTX, PPT using officeParser
+          extractedText = await officeParser.parseOfficeAsync(file.buffer);
         }
         
         if (!extractedText || extractedText.trim().length === 0) {
