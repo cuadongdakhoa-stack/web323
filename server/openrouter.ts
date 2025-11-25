@@ -527,8 +527,13 @@ ${medicationSegments.length > 0
   ? `- Danh sách thuốc đã được PHÂN NHÓM theo thời gian sử dụng
 - CHỈ kiểm tra tương tác giữa các thuốc TRONG CÙNG NHÓM (cùng thời điểm)
 - KHÔNG kiểm tra tương tác giữa thuốc ở nhóm này với thuốc ở nhóm khác
-- Ví dụ: Thuốc A (01/01-03/01) và Thuốc B (04/01-06/01) → KHÔNG overlap → KHÔNG tương tác
-- Ví dụ: Thuốc C (01/01-05/01) và Thuốc D (03/01-08/01) → CÓ overlap (03/01-05/01) → CÓ tương tác
+- ⚠️ ĐẶC BIỆT CHÚ Ý MEDICATION SWITCHING:
+  • Nếu thuốc A kết thúc ngày X và thuốc B bắt đầu ngày X+1 → ĐÂY LÀ THAY THUỐC (sequential)
+  • Ví dụ: Lovastatin (23-27/10) NGƯNG, Atorvastatin (28/10-04/11) BẮT ĐẦU → KHÔNG tương tác
+  • Ví dụ: Ceftazidime (01-07/01) NGƯNG, Ceftriaxone (08-14/01) BẮT ĐẦU → KHÔNG tương tác
+  • CHỈ BÁO TƯƠNG TÁC KHI 2 THUỐC DÙNG ĐỒNG THỜI (overlap thời gian)
+- Ví dụ KHÔNG overlap: Thuốc A (01/01-03/01) và Thuốc B (04/01-06/01) → KHÔNG tương tác
+- Ví dụ CÓ overlap: Thuốc C (01/01-05/01) và Thuốc D (03/01-08/01) → CÓ tương tác (03/01-05/01)
 - ⚠️ TUYỆT ĐỐI KHÔNG kiểm tra tương tác giữa các thuốc ở nhóm khác nhau (vì không dùng cùng thời điểm)`
   : `- Danh sách thuốc CHƯA có thông tin ngày tháng rõ ràng
 - Kiểm tra tất cả tương tác có thể xảy ra`}
@@ -945,6 +950,7 @@ VÍ DỤ NHẬN DIỆN NGÀY THÁNG (rất quan trọng):
 - CHỈ lấy ĐÚNG ngày cuối cùng được ghi rõ trong tài liệu
 - KHÔNG được tự ý kéo dài usageEndDate ra quá ngày cuối cùng có trong văn bản
 - Nếu thuốc dùng "Ngày 1,2,3" thì endDate = ngày 3, KHÔNG PHẢI ngày 6 hay ngày nào khác
+- ⚠️ MEDICATION SWITCHING: Nếu thấy thuốc A bị NGƯNG và thuốc B BẮT ĐẦU → đây là THAY THUỐC (sequential), KHÔNG phải dùng đồng thời
 
 1. Khoảng ngày rõ ràng:
    - "Ngày 1-3/1/2024: Paracetamol" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
@@ -968,12 +974,27 @@ VÍ DỤ NHẬN DIỆN NGÀY THÁNG (rất quan trọng):
    - "Ngày 15/01/2024: Aspirin" → usageStartDate: "2024-01-15", usageEndDate: "2024-01-15" (cùng ngày nếu chỉ dùng 1 ngày)
    - "Aspirin 500mg" (không có ngày) → usageStartDate: null, usageEndDate: null
 
+6. ⚠️ MEDICATION SWITCHING (rất quan trọng):
+   - "Ngày 23-27/10: Lovastatin 10mg (tối 1 viên). Ngày 28/10: Lovastatin NGƯNG, Atorvastatin 10mg BẮT ĐẦU"
+     → Lovastatin: startDate: "2024-10-23", endDate: "2024-10-27"
+     → Atorvastatin: startDate: "2024-10-28", endDate: null (hoặc ngày xuất viện)
+   - "Ngày 1-5/1: Thuốc A. Ngày 6/1: Đổi sang Thuốc B"
+     → Thuốc A: startDate: "2024-01-01", endDate: "2024-01-05"
+     → Thuốc B: startDate: "2024-01-06", endDate: null
+   - CHÚ Ý: Nếu trong "Tờ điều trị" có nhiều trang:
+     • Trang 1 (ngày 23/10): Lovastatin x1 viên
+     • Trang 5 (ngày 28/10): KHÔNG CÓ Lovastatin, CHỈ CÓ Atorvastatin
+     → ĐÂY LÀ SWITCHING! Lovastatin endDate = 27/10, Atorvastatin startDate = 28/10
+
 ⚠️ SAI LẦM THƯỜNG GẶP CẦN TRÁNH:
 ❌ SAI: "Ngày 1,2,3/1/2024" → endDate: "2024-01-06" (sai vì không có ngày 6 trong văn bản)
 ✅ ĐÚNG: "Ngày 1,2,3/1/2024" → endDate: "2024-01-03" (ngày cuối cùng được ghi)
 
 ❌ SAI: Thuốc A dùng ngày 1-3/1, Thuốc B dùng ngày 4-6/1 → Báo overlap (SAI! Không chồng lấp)
 ✅ ĐÚNG: Thuốc A (1-3/1) kết thúc trước khi Thuốc B (4-6/1) bắt đầu → KHÔNG overlap
+
+❌ SAI: Lovastatin (23-27/10) và Atorvastatin (28/10-04/11) → Báo tương tác statin (SAI! Đây là switching)
+✅ ĐÚNG: Lovastatin NGƯNG 27/10, Atorvastatin BẮT ĐẦU 28/10 → Sequential, KHÔNG tương tác
 
 VÍ DỤ ICD-10:
 - "I10: Tăng huyết áp" → diagnosisMain: "Tăng huyết áp", icdCodes.main: "I10"

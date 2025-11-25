@@ -253,3 +253,82 @@ function formatDateRange(start: Date | null, end: Date | null): string {
 
   return `${formatDate(start)} - ${formatDate(end)}`;
 }
+
+/**
+ * Check if two medications overlap in time
+ * Returns true only if they are used simultaneously
+ */
+export function checkMedicationOverlap(med1: Medication, med2: Medication): boolean {
+  // If either medication lacks date info, cannot determine overlap
+  if (!med1.usageStartDate || !med2.usageStartDate) {
+    return false;
+  }
+
+  const start1 = new Date(med1.usageStartDate);
+  const end1 = med1.usageEndDate ? new Date(med1.usageEndDate) : new Date();
+  const start2 = new Date(med2.usageStartDate);
+  const end2 = med2.usageEndDate ? new Date(med2.usageEndDate) : new Date();
+
+  // Check if ranges overlap
+  // med1: [start1, end1], med2: [start2, end2]
+  // Overlap if: start1 <= end2 AND start2 <= end1
+  return start1 <= end2 && start2 <= end1;
+}
+
+/**
+ * Detect medication switching (sequential use of similar drugs)
+ * Returns true if med2 starts immediately after med1 ends (within 1 day gap)
+ */
+export function detectMedicationSwitching(med1: Medication, med2: Medication): boolean {
+  // Both medications need complete date ranges
+  if (!med1.usageStartDate || !med1.usageEndDate || !med2.usageStartDate) {
+    return false;
+  }
+
+  const end1 = new Date(med1.usageEndDate);
+  const start2 = new Date(med2.usageStartDate);
+
+  // Calculate day difference
+  const dayDiff = Math.floor((start2.getTime() - end1.getTime()) / (1000 * 60 * 60 * 24));
+
+  // Sequential if med2 starts 0-2 days after med1 ends
+  return dayDiff >= 0 && dayDiff <= 2;
+}
+
+/**
+ * Validate drug interaction before reporting
+ * Returns null if interaction is invalid (e.g., sequential medications)
+ * Returns warning object if interaction is valid
+ */
+export function validateDrugInteraction(
+  med1: Medication, 
+  med2: Medication, 
+  interactionMessage: string
+): { isValid: boolean; reason?: string } {
+  // Check if medications actually overlap
+  if (!checkMedicationOverlap(med1, med2)) {
+    return {
+      isValid: false,
+      reason: `Thuốc ${med1.drugName} và ${med2.drugName} không dùng đồng thời (sequential use)`
+    };
+  }
+
+  // Check if this is medication switching (same drug class, sequential)
+  if (detectMedicationSwitching(med1, med2)) {
+    // Check if same drug class (basic heuristic: similar names or statins, etc.)
+    const isSameDrugClass = 
+      med1.drugName.toLowerCase().includes(med2.drugName.toLowerCase().split(' ')[0]) ||
+      med2.drugName.toLowerCase().includes(med1.drugName.toLowerCase().split(' ')[0]) ||
+      (med1.drugName.toLowerCase().includes('statin') && med2.drugName.toLowerCase().includes('statin')) ||
+      (med1.drugName.toLowerCase().includes('azole') && med2.drugName.toLowerCase().includes('azole'));
+
+    if (isSameDrugClass) {
+      return {
+        isValid: false,
+        reason: `Thuốc ${med1.drugName} được thay bằng ${med2.drugName} (medication switching)`
+      };
+    }
+  }
+
+  return { isValid: true };
+}
