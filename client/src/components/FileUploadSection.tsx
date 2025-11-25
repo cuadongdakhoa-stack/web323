@@ -62,15 +62,15 @@ const DEFAULT_SUGGESTIONS: DocumentSuggestions = {
 };
 
 const FILE_GROUP_LABELS: Record<string, string> = {
-  admin: "Hành chính",
+  admin: "Bệnh án / Hồ sơ vào viện",
   lab: "Cận lâm sàng",
-  prescription: "Đơn thuốc",
+  prescription: "Tờ điều trị / Đơn thuốc",
 };
 
 const FILE_GROUP_DESCRIPTIONS: Record<string, string> = {
-  admin: "Giấy tờ hành chính (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
-  lab: "Kết quả xét nghiệm, chẩn đoán hình ảnh (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
-  prescription: "Đơn thuốc, phiếu y lệnh (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
+  admin: "Bệnh án, giấy nhập viện, thông tin bệnh nhân (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
+  lab: "Kết quả xét nghiệm, chẩn đoán hình ảnh, creatinine (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
+  prescription: "Tờ điều trị, đơn thuốc, y lệnh (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
 };
 
 const FILE_GROUP_ACCEPTS: Record<string, string> = {
@@ -457,7 +457,7 @@ export default function FileUploadSection({ caseId }: FileUploadSectionProps) {
           <div>
             <CardTitle>Tài liệu đính kèm</CardTitle>
             <CardDescription>
-              Quản lý file theo nhóm: Hành chính, Cận lâm sàng, Đơn thuốc
+              Upload riêng 3 loại: Bệnh án, Cận lâm sàng, Tờ điều trị (không bắt buộc đủ cả 3)
             </CardDescription>
           </div>
           <Button
@@ -482,7 +482,7 @@ export default function FileUploadSection({ caseId }: FileUploadSectionProps) {
             {suggestions.admin?.needed && (
               <Alert data-testid="alert-suggest-admin">
                 <AlertDescription>
-                  <strong>Hành chính:</strong> {suggestions.admin?.reason || "Cần tài liệu hành chính"}
+                  <strong>Bệnh án:</strong> {suggestions.admin?.reason || "Cần bệnh án hoặc giấy nhập viện"}
                 </AlertDescription>
               </Alert>
             )}
@@ -496,7 +496,7 @@ export default function FileUploadSection({ caseId }: FileUploadSectionProps) {
             {suggestions.prescription?.needed && (
               <Alert data-testid="alert-suggest-prescription">
                 <AlertDescription>
-                  <strong>Đơn thuốc:</strong> {suggestions.prescription?.reason || "Cần đơn thuốc"}
+                  <strong>Tờ điều trị:</strong> {suggestions.prescription?.reason || "Cần tờ điều trị hoặc đơn thuốc"}
                 </AlertDescription>
               </Alert>
             )}

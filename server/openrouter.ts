@@ -55,6 +55,148 @@ const evidenceItemSchema = z.object({
   citationCount: z.number().nullable().optional(),
 });
 
+// ============================================
+// SPECIALIZED PROMPTS FOR EACH DOCUMENT TYPE
+// ============================================
+
+const BENH_AN_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
+
+Trích xuất từ BỆNH ÁN / HỒ SƠ VÀO VIỆN. CHỈ TRÍCH XUẤT CÁC TRƯỜNG SAU:
+
+TRƯỜNG CHÍNH (quan trọng):
+- patientName: Họ tên bệnh nhân
+- patientAge: Tuổi (số)
+- patientGender: Giới tính ("Nam" hoặc "Nữ")
+- patientWeight: Cân nặng (kg)
+- patientHeight: Chiều cao (cm)
+- admissionDate: Ngày nhập viện (YYYY-MM-DD)
+- diagnosisMain: Chẩn đoán CHÍNH
+- diagnosisSecondary: Mảng các bệnh kèm theo
+- icdCodes: { main: "mã ICD chính", secondary: ["mã ICD bệnh kèm"] }
+- medicalHistory: Tiền sử bệnh (tăng huyết áp, đái tháo đường, suy tim, suy thận, bệnh gan, ung thư, phẫu thuật...)
+- allergies: Dị ứng thuốc
+
+⚠️ CÁC TRƯỜNG SAU ĐỂ null (KHÔNG TRÍCH XUẤT TỪ BỆNH ÁN):
+- labResults: null (creatinine sẽ được trích xuất từ Cận lâm sàng)
+- medications: null (thuốc sẽ được trích xuất từ Tờ điều trị)
+
+QUY TẮC TRÍCH XUẤT CHẨN ĐOÁN (CỰC KỲ QUAN TRỌNG):
+1. Tìm mục (15) hoặc "Chẩn đoán xác định" → diagnosisMain
+2. Tìm mục (16) hoặc "Mã bệnh" → icdCodes.main
+3. Tìm mục (17) hoặc "Bệnh kèm theo" → diagnosisSecondary (TÁCH TỪNG BỆNH theo dấu ; hoặc ,)
+4. Tìm mục (18) hoặc "Mã bệnh kèm theo" → icdCodes.secondary (TÁCH TỪNG MÃ theo dấu ; hoặc ,)
+
+VÍ DỤ:
+Input: "(15) Bệnh đái tháo đường không phụ thuộc insuline (16) E11 (17) Rối loạn chuyển hóa lipoprotein;Viêm giáp;Xơ vữa động mạch (18) E78;K21;M10"
+Output:
+{
+  "diagnosisMain": "Bệnh đái tháo đường không phụ thuộc insuline",
+  "icdCodes": { "main": "E11", "secondary": ["E78", "K21", "M10"] },
+  "diagnosisSecondary": ["Rối loạn chuyển hóa lipoprotein", "Viêm giáp", "Xơ vữa động mạch"]
+}
+
+⚠️ QUY TẮC QUAN TRỌNG:
+- CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
+- Không có thông tin → null
+- Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary`;
+
+const CAN_LAM_SANG_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
+
+Trích xuất từ KẾT QUẢ CẬN LÂM SÀNG. CHỈ TRÍCH XUẤT CREATININE:
+
+TRƯỜNG CHÍNH:
+- labResults: {
+    creatinine: số (ví dụ: 1.2 hoặc 91.39),
+    creatinineUnit: "mg/dL" hoặc "micromol/L"
+  }
+
+⚠️ HƯỚNG DẪN TRÍCH XUẤT CREATININE:
+1. Tìm "Creatinine", "Creatinin", "SCr", "Định lượng Creatinin (máu)"
+2. Lấy GIÁ TRỊ SỐ (bỏ qua giá tiền!)
+3. Xác định đơn vị:
+   - mg/dL: thường từ 0.5 - 3.0
+   - micromol/L (µmol/L, μmol/L, umol/L): thường từ 40 - 300
+
+VÍ DỤ ĐÚNG:
+- "Creatinine: 1.2 mg/dL" → { creatinine: 1.2, creatinineUnit: "mg/dL" }
+- "Định lượng Creatinin (máu) 91,39 µmol/L" → { creatinine: 91.39, creatinineUnit: "micromol/L" }
+- "SCr 106 micromol/L" → { creatinine: 106, creatinineUnit: "micromol/L" }
+
+VÍ DỤ SAI (TRÁNH):
+- "Creatinine 22,400" trong bảng kê → ĐÓ LÀ GIÁ TIỀN, KHÔNG PHẢI KẾT QUẢ
+- Không tìm thấy kết quả → labResults: null
+
+⚠️ CÁC TRƯỜNG SAU ĐỂ null:
+- patientName, patientAge, patientGender, patientWeight, patientHeight: null
+- admissionDate, diagnosisMain, diagnosisSecondary, icdCodes: null
+- medicalHistory, allergies: null
+- medications: null`;
+
+const TO_DIEU_TRI_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
+
+Trích xuất từ TỜ ĐIỀU TRỊ / ĐƠN THUỐC. CHỈ TRÍCH XUẤT DANH SÁCH THUỐC:
+
+TRƯỜNG CHÍNH:
+- medications: [
+    {
+      "drugName": "tên thuốc chính xác",
+      "dose": "liều lượng (ví dụ: 2 nhát, 10mg, 0.4mg)",
+      "frequency": "tần suất (ví dụ: Ngày 2 lần, Sáng 1 viên tối 1 viên)",
+      "route": "đường dùng (Uống, Hít, Tiêm tĩnh mạch, Tiêm bắp)",
+      "usageStartDate": "YYYY-MM-DD",
+      "usageEndDate": "YYYY-MM-DD"
+    }
+  ]
+
+⚠️ HƯỚNG DẪN TRÍCH XUẤT NGÀY THÁNG (CỰC KỲ QUAN TRỌNG):
+
+QUY TẮC VÀNG:
+- CHỈ lấy ĐÚNG ngày cuối cùng được ghi rõ trong tài liệu
+- KHÔNG tự ý kéo dài endDate ra quá ngày cuối cùng
+- Nếu "Ngày 1,2,3/1/2024" → endDate = "2024-01-03" (KHÔNG PHẢI 2024-01-06!)
+
+VÍ DỤ:
+1. Khoảng ngày rõ ràng:
+   - "Ngày 1-3/1/2024: Paracetamol" → startDate: "2024-01-01", endDate: "2024-01-03"
+   - "01/01 - 05/01/2024: Amoxicillin" → startDate: "2024-01-01", endDate: "2024-01-05"
+
+2. Ngày liên tiếp:
+   - "Ngày 1,2,3/1/2024: Ceftriaxone" → startDate: "2024-01-01", endDate: "2024-01-03"
+   - "Ngày 5,6,7,8/12/2023" → startDate: "2023-12-05", endDate: "2023-12-08"
+
+3. Ngày không liên tiếp:
+   - "Ngày 1,3,5/1/2024" → startDate: "2024-01-01", endDate: "2024-01-05"
+
+4. MEDICATION SWITCHING (rất quan trọng):
+   - "Ngày 23-27/10: Lovastatin 10mg. Ngày 28/10: Lovastatin NGƯNG, Atorvastatin BẮT ĐẦU"
+     → Lovastatin: { startDate: "2024-10-23", endDate: "2024-10-27" }
+     → Atorvastatin: { startDate: "2024-10-28", endDate: null hoặc ngày xuất viện }
+   
+   - Nếu Tờ điều trị nhiều trang:
+     • Trang 1-7 (23-27/10): có Lovastatin
+     • Trang 8+ (28/10+): KHÔNG CÓ Lovastatin, CHỈ CÓ Atorvastatin
+     → ĐÂY LÀ SWITCHING! Lovastatin endDate = "2024-10-27"
+
+⚠️ SAI LẦM THƯỜNG GẶP (TRÁNH):
+❌ "Ngày 1,2,3/1/2024" → endDate: "2024-01-06" (SAI! không có ngày 6)
+✅ "Ngày 1,2,3/1/2024" → endDate: "2024-01-03" (ĐÚNG! ngày cuối được ghi)
+
+⚠️ ĐƯỜNG DÙNG (route):
+- "HÍT" hoặc "EVOHALER" → route: "Hít"
+- "UỐNG" hoặc "Viên" → route: "Uống"
+- "TIÊM IV" → route: "Tiêm tĩnh mạch"
+- "TIÊM IM" → route: "Tiêm bắp"
+
+⚠️ LIỀU LƯỢNG (dose):
+- "Tamsulosin 0,4mg" → dose: "0.4mg" (KHÔNG PHẢI 4mg)
+- "2 nhát" → dose: "2 nhát"
+
+⚠️ CÁC TRƯỜNG SAU ĐỂ null:
+- patientName, patientAge, patientGender, patientWeight, patientHeight: null
+- admissionDate, diagnosisMain, diagnosisSecondary, icdCodes: null
+- medicalHistory, allergies: null
+- labResults: null`;
+
 const clinicalAnalysisSchema = z.object({
   renalAssessment: z.string(),
   drugDrugInteractions: z.array(z.string()),
@@ -534,9 +676,24 @@ ${medicationSegments.length > 0
   • CHỈ BÁO TƯƠNG TÁC KHI 2 THUỐC DÙNG ĐỒNG THỜI (overlap thời gian)
 - Ví dụ KHÔNG overlap: Thuốc A (01/01-03/01) và Thuốc B (04/01-06/01) → KHÔNG tương tác
 - Ví dụ CÓ overlap: Thuốc C (01/01-05/01) và Thuốc D (03/01-08/01) → CÓ tương tác (03/01-05/01)
-- ⚠️ TUYỆT ĐỐI KHÔNG kiểm tra tương tác giữa các thuốc ở nhóm khác nhau (vì không dùng cùng thời điểm)`
+- ⚠️ TUYỆT ĐỐI KHÔNG kiểm tra tương tác giữa các thuốc ở nhóm khác nhau (vì không dùng cùng thời điểm)
+
+⚠️ DANH SÁCH TƯƠNG TÁC SAI - KHÔNG BÁO CÁO:
+  • Spironolactone + Metoprolol → KHÔNG CÓ TƯƠNG TÁC Ý NGHĨA LÂM SÀNG (bỏ qua)
+  • Spironolactone + beta-blocker (bất kỳ) → KHÔNG BÁO (phối hợp an toàn trong suy tim)
+  
+⚠️ TƯƠNG TÁC CẦN LƯU Ý NHẸ (KHÔNG CẢNH BÁO NẶNG):
+  • Clopidogrel + PPI (Omeprazole, Esomeprazole): "Lưu ý theo dõi hiệu quả kháng kết tập tiểu cầu. Có thể thay PPI khác nếu cần." (KHÔNG DÙNG từ "cảnh báo" hay "nguy hiểm")
+  • Clopidogrel + Aspirin: "Phối hợp điều trị kháng kết tập tiểu cầu kép - giám sát nguy cơ chảy máu." (ngữ điệu nhẹ nhàng)`
   : `- Danh sách thuốc CHƯA có thông tin ngày tháng rõ ràng
-- Kiểm tra tất cả tương tác có thể xảy ra`}
+- Kiểm tra tất cả tương tác có thể xảy ra
+  
+⚠️ DANH SÁCH TƯƠNG TÁC SAI - KHÔNG BÁO CÁO:
+  • Spironolactone + Metoprolol → KHÔNG BÁO (phối hợp an toàn)
+  
+⚠️ TƯƠNG TÁC CẦN LƯU Ý NHẸ:
+  • Clopidogrel + PPI: lưu ý nhẹ, không cảnh báo nặng
+  • Clopidogrel + Aspirin: phối hợp điều trị, giám sát chảy máu`}
 
 Hãy cung cấp phân tích chi tiết bao gồm:
 1. Đánh giá chức năng thận và tác động đến các thuốc
@@ -890,23 +1047,76 @@ ${context.caseData.allergies ? `⚠️ Dị ứng: ${context.caseData.allergies}
   return callOpenRouter(MODELS.GPT4, messages, 0.4);
 }
 
+// Fallback comprehensive prompt (for backward compatibility - used when fileGroup is not specified)
+function getComprehensivePrompt(): string {
+  return `Trích xuất TỔNG HỢP từ tài liệu y tế. Có thể có NHIỀU FILE (ngăn cách bởi === FILE X: ===). 
+TỔNG HỢP tất cả thông tin. Nếu xung đột → ưu tiên file mới nhất.
+
+TRÍCH XUẤT TẤT CẢ CÁC TRƯỜNG:
+- Thông tin bệnh nhân: name, age, gender, weight, height, admissionDate
+- Chẩn đoán: diagnosisMain, diagnosisSecondary, icdCodes (tách rõ chính + phụ)
+- Tiền sử: medicalHistory, allergies
+- Xét nghiệm: labResults (creatinine + creatinineUnit)
+- Thuốc: medications (drugName, dose, frequency, route, usageStartDate, usageEndDate)
+
+⚠️ QUAN TRỌNG:
+- Ngày thuốc: "Ngày 1,2,3/1/2024" → endDate = "2024-01-03" (ngày cuối, KHÔNG kéo dài)
+- Medication switching: thuốc A ngưng → thuốc B bắt đầu = sequential, KHÔNG overlap
+- Creatinine: tránh nhầm với giá tiền trong bảng kê`;
+}
+
 export async function extractDataFromDocument(
   textContent: string,
-  fileType: "pdf" | "docx"
+  fileType: "pdf" | "docx",
+  fileGroup?: string  // NEW: "admin", "lab", or "prescription"
 ): Promise<any> {
+  // Select specialized prompt based on fileGroup
+  let userPromptTemplate: string;
+  
+  if (fileGroup === "admin") {
+    userPromptTemplate = BENH_AN_PROMPT;
+  } else if (fileGroup === "lab") {
+    userPromptTemplate = CAN_LAM_SANG_PROMPT;
+  } else if (fileGroup === "prescription") {
+    userPromptTemplate = TO_DIEU_TRI_PROMPT;
+  } else {
+    // Fallback: use original comprehensive prompt for backward compatibility
+    userPromptTemplate = getComprehensivePrompt();
+  }
+  
   const systemPrompt = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.`;
 
-  const userPrompt = `Trích xuất và TỔNG HỢP từ ${fileType.toUpperCase()}. Có thể có NHIỀU FILE (ngăn cách bởi === FILE X: ===). TỔNG HỢP tất cả thông tin từ TẤT CẢ các file. Nếu có xung đột → ưu tiên file mới nhất. TRẢ VỀ CHỈ JSON thuần:
+  const userPrompt = `${userPromptTemplate}
 
+DOCUMENT CONTENT (${fileType.toUpperCase()}):
 ${textContent}
 
-QUY TẮC:
-⚠️ CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
-⚠️ Không có thông tin → null
-⚠️ ĐỌC KỸ TOÀN BỘ TẤT CẢ FILE - không bỏ sót
-⚠️ TỔNG HỢP thông tin từ nhiều file (ví dụ: file 1 có tuổi, file 2 có thuốc → gộp cả 2)
+⚠️ QUY TẮC:
+- CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
+- Không có thông tin → null
+- ĐỌC KỸ TOÀN BỘ TÀI LIỆU
 
-HƯỚNG DẪN TRÍCH XUẤT CHẨN ĐOÁN (CỰC KỲ QUAN TRỌNG):
+JSON format:
+{
+  "patientName": "string hoặc null",
+  "patientAge": number hoặc null,
+  "patientGender": "Nam" hoặc "Nữ" hoặc null,
+  "patientWeight": number hoặc null,
+  "patientHeight": number hoặc null,
+  "admissionDate": "YYYY-MM-DD hoặc null",
+  "diagnosisMain": "string hoặc null",
+  "diagnosisSecondary": ["bệnh kèm"] hoặc null,
+  "icdCodes": { "main": "mã ICD", "secondary": ["mã ICD"] } hoặc null,
+  "diagnosis": "string hoặc null",
+  "medicalHistory": "string hoặc null",
+  "allergies": "string hoặc null",
+  "labResults": { "creatinine": number, "creatinineUnit": "mg/dL" | "micromol/L" } hoặc null,
+  "medications": [{ "drugName": "string", "dose": "string", "frequency": "string", "route": "string", "usageStartDate": "YYYY-MM-DD", "usageEndDate": "YYYY-MM-DD" }] hoặc null
+}
+
+CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
+
+  const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);  // Temperature thấp = chính xác hơn
 - Phân tách rõ CHẨN ĐOÁN CHÍNH (diagnosisMain) và BỆNH KÈM (diagnosisSecondary)
 - Tìm MÃ ICD-10 cho CẢ chẩn đoán chính VÀ TẤT CẢ bệnh kèm (nếu có ghi rõ trong tài liệu)
 - ⚠️ ĐẶC BIỆT CHÚ Ý: Nếu có bảng kê với các mục số như (15), (16), (17), (18):

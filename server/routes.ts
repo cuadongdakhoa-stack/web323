@@ -290,6 +290,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Không có file được tải lên" });
       }
 
+      // NEW: Get fileGroup from request body (admin, lab, or prescription)
+      const fileGroup = req.body.fileGroup as string | undefined;
+      console.log(`[Extract] Processing ${files.length} files with fileGroup: ${fileGroup || 'none (comprehensive)'}`);
+
       let combinedTextContent = "";
 
       // Process all files in the batch
@@ -358,8 +362,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Nội dung file quá ngắn, không đủ thông tin để trích xuất" });
       }
 
-      // Send combined text to GPT-4 AI (single API call for all files)
-      const extractedData = await extractDataFromDocument(combinedTextContent, "pdf");
+      // Send combined text to GPT-4 AI with specialized prompt based on fileGroup
+      const extractedData = await extractDataFromDocument(combinedTextContent, "pdf", fileGroup);
       
       if (!extractedData || typeof extractedData !== 'object') {
         return res.status(500).json({ message: "AI không trả về dữ liệu hợp lệ" });
