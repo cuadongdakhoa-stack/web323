@@ -1061,7 +1061,13 @@ TRẢ VỀ JSON (KHÔNG có markdown, KHÔNG giải thích thêm):
     };
   }
 
-  const verificationQuery = `Kiểm tra khuyến nghị điều chỉnh liều thuốc cho bệnh nhân ${caseData.patientAge} tuổi với chẩn đoán ${caseData.diagnosis} và CrCl ${caseData.egfr || "không rõ"} mL/min (Cockcroft-Gault). Thuốc đang dùng: ${caseData.medications?.map((m: any) => m.drugName).join(", ")}`;
+  const verificationQuery = `Kiểm tra khuyến nghị điều chỉnh liều thuốc cho bệnh nhân ${caseData.patientAge} tuổi với chẩn đoán ${caseData.diagnosis} và CrCl ${caseData.egfr || "không rõ"} mL/min (Cockcroft-Gault). Thuốc đang dùng: ${caseData.medications?.map((m: any) => {
+    if (m.activeIngredient) {
+      const strengthInfo = (m.strength && m.unit) ? ` ${m.strength}${m.unit}` : '';
+      return `${m.drugName} (${m.activeIngredient}${strengthInfo})`;
+    }
+    return m.drugName;
+  }).join(", ")}`;
 
   const verified = await verifyWithPipeline(
     typeof initialAnalysis === 'string' ? initialAnalysis : JSON.stringify(initialAnalysis), 
@@ -1299,13 +1305,23 @@ export async function chatWithAI(
   let statsContext = '';
   if (context?.systemStats) {
     const { totalCases, totalPatients, topDiagnoses, topMedications } = context.systemStats;
+    
+    // Format top medications with activeIngredient if available
+    const topMedsFormatted = topMedications.slice(0, 5).map((m: any) => {
+      if (m.activeIngredient) {
+        const strengthInfo = (m.strength && m.unit) ? ` ${m.strength}${m.unit}` : '';
+        return `${m.drugName} (${m.activeIngredient}${strengthInfo})`;
+      }
+      return m.drugName;
+    }).join(', ');
+    
     statsContext = `
 
 THÔNG TIN HỆ THỐNG BỆNH VIỆN (để tham khảo khi tư vấn):
 - Tổng số ca bệnh đã tư vấn: ${totalCases} ca
 - Tổng số bệnh nhân: ${totalPatients} người
 ${topDiagnoses.length > 0 ? `- Chẩn đoán phổ biến: ${topDiagnoses.slice(0, 3).map(d => d.diagnosis).join(', ')}` : ''}
-${topMedications.length > 0 ? `- Thuốc hay dùng: ${topMedications.slice(0, 5).map(m => m.drugName).join(', ')}` : ''}`;
+${topMedications.length > 0 ? `- Thuốc hay dùng: ${topMedsFormatted}` : ''}`;
   }
   
   const systemPrompt = `Em là "Trợ lý ảo Cửa Đông Care" - trợ lý dược lâm sàng chuyên nghiệp của Bệnh viện Đa khoa Cửa Đông, TP Vinh, Nghệ An.
