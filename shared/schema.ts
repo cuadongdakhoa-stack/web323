@@ -239,6 +239,7 @@ export type UploadedFile = typeof uploadedFiles.$inferSelect;
 
 export const drugFormulary = pgTable("drug_formulary", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  drugCode: text("drug_code"), // Mã dược từ bệnh viện (VD: 270314.TBH075.TYT)
   tradeName: text("trade_name").notNull(),
   activeIngredient: text("active_ingredient").notNull(),
   strength: text("strength").notNull(),

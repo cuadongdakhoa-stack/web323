@@ -217,13 +217,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return med;
       }
 
-      // Try to find drug in formulary by tradeName (case-insensitive, fuzzy match)
+      // Try to find drug in formulary by drugName (case-insensitive, fuzzy match)
       try {
-        const tradeName = med.tradeName || med.name || '';
-        if (!tradeName.trim()) return med;
+        const drugName = med.drugName || med.tradeName || med.name || '';
+        if (!drugName.trim()) return med;
 
         // Clean drug name: remove dosage, route, etc.
-        const cleanName = tradeName
+        const cleanName = drugName
           .replace(/\s+\d+\s*(mg|g|ml|mcg|µg|IU|%)\b.*/i, '') // Remove "500mg", "10ml", etc.
           .replace(/\s+(viên|ống|chai|lọ|túi|gói)\b.*/i, '') // Remove unit
           .replace(/\s+(uống|tiêm|bôi|nhỏ)\b.*/i, '') // Remove route
@@ -244,7 +244,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .limit(1);
 
         if (foundDrugs.length > 0) {
-          console.log(`[Enrichment] Found active ingredient for "${tradeName}": ${foundDrugs[0].activeIngredient}`);
+          console.log(`[Enrichment] Found active ingredient for "${drugName}": ${foundDrugs[0].activeIngredient}`);
           return {
             ...med,
             activeIngredient: foundDrugs[0].activeIngredient,
@@ -256,7 +256,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         return med;
       } catch (error) {
-        console.error(`[Enrichment Error] Failed to enrich medication "${med.tradeName}":`, error);
+        console.error(`[Enrichment Error] Failed to enrich medication "${med.drugName || med.tradeName || 'unknown'}":`, error);
         return med;
       }
     }));
@@ -264,6 +264,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return enrichedMedications;
   }
 
+  // Multer config for case documents (PDF, DOC, PPT, images)
   const upload = multer({
     storage: multer.memoryStorage(),
     limits: { fileSize: 10 * 1024 * 1024 },
@@ -273,12 +274,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document', // .docx
         'application/msword', // .doc
         'application/vnd.openxmlformats-officedocument.presentationml.presentation', // .pptx
-        'application/vnd.ms-powerpoint' // .ppt
+        'application/vnd.ms-powerpoint', // .ppt
+        'image/jpeg', // .jpg, .jpeg
+        'image/png', // .png
+        'image/jpg' // alternative MIME for .jpg
       ];
       if (allowedTypes.includes(file.mimetype)) {
         cb(null, true);
       } else {
-        cb(new Error('Chỉ chấp nhận file PDF, DOC, DOCX, PPT, PPTX'));
+        cb(new Error('Chỉ chấp nhận file PDF, DOC, DOCX, PPT, PPTX, JPG, PNG'));
+      }
+    }
+  });
+
+  // Multer config for drug formulary upload (Excel, CSV)
+  const uploadDrug = multer({
+    storage: multer.memoryStorage(),
+    limits: { fileSize: 10 * 1024 * 1024 },
+    fileFilter: (req, file, cb) => {
+      const allowedTypes = [
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', // .xlsx
+        'application/vnd.ms-excel', // .xls
+        'text/csv', // .csv
+        'application/csv', // alternative CSV MIME
+      ];
+      if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+      } else {
+        cb(new Error('Chỉ chấp nhận file Excel (.xlsx, .xls) hoặc CSV'));
       }
     }
   });
@@ -833,8 +856,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return {
           ...med,
           status: computeMedicationStatus(med),
-          // Use formulary if available, otherwise fallback to medication data
-          activeIngredient: matchedDrug?.activeIngredient || med.drugName,
+          // Priority: 1) Formulary lookup, 2) Existing activeIngredient in DB, 3) drugName
+          activeIngredient: matchedDrug?.activeIngredient || (med as any).activeIngredient || med.drugName,
           strength: matchedDrug?.strength || fallbackParsed.strength,
           unit: matchedDrug?.unit || fallbackParsed.unit,
         };
@@ -848,7 +871,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/medications", requireAuth, async (req, res) => {
     try {
       const validatedData = insertMedicationSchema.parse(req.body);
-      const medication = await storage.createMedication(validatedData);
+      
+      // ✨ ENRICH: Auto-fill activeIngredient from drug formulary before saving
+      const enrichedData = await enrichMedicationsWithActiveIngredients([validatedData]);
+      const dataToSave = enrichedData[0] || validatedData;
+      
+      const medication = await storage.createMedication(dataToSave);
       res.status(201).json(medication);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
@@ -1628,7 +1656,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post("/api/drugs/upload", requireAuth, requireRole("admin"), upload.single('file'), async (req, res) => {
+  app.post("/api/drugs/upload", requireAuth, requireRole("admin"), uploadDrug.single('file'), async (req, res) => {
     try {
       if (!req.file) {
         return res.status(400).json({ message: "Không có file được tải lên" });
@@ -1689,20 +1717,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
 
             const firstRow: any = data[0];
-            const hasVietnameseHeaders = 'Tên thuốc' in firstRow || 'Hoạt chất' in firstRow;
+            const hasVietnameseHeaders = 
+              'Tên thuốc' in firstRow || 
+              'Tên thuốc, nồng độ, hàm lượng' in firstRow || 
+              'Hoạt chất' in firstRow || 
+              'Tên hoạt chất' in firstRow;
             const hasEnglishHeaders = 'tradeName' in firstRow || 'activeIngredient' in firstRow;
             
             if (!hasVietnameseHeaders && !hasEnglishHeaders) {
               return res.status(400).json({ 
-                message: "File CSV thiếu cột bắt buộc. Cần có: 'Tên thuốc', 'Hoạt chất' hoặc 'tradeName', 'activeIngredient'" 
+                message: "File CSV thiếu cột bắt buộc. Cần có: 'Tên thuốc', 'Tên hoạt chất' hoặc 'tradeName', 'activeIngredient'" 
               });
             }
 
             drugs = data.map((row: any) => ({
-              tradeName: (row['Tên thuốc'] ?? row['tradeName'] ?? '').toString().trim(),
-              activeIngredient: (row['Hoạt chất'] ?? row['activeIngredient'] ?? '').toString().trim(),
+              drugCode: (row[' Mã dược '] ?? row['Mã dược'] ?? row['drugCode'] ?? '').toString().trim() || null,
+              tradeName: (row['Tên thuốc, nồng độ, hàm lượng'] ?? row['Tên thuốc'] ?? row['tradeName'] ?? '').toString().trim(),
+              activeIngredient: (row['Tên hoạt chất'] ?? row['Hoạt chất'] ?? row['activeIngredient'] ?? '').toString().trim(),
               strength: (row['Hàm lượng'] ?? row['strength'] ?? '').toString().trim(),
-              unit: (row['Đơn vị'] ?? row['unit'] ?? '').toString().trim(),
+              unit: (row['Đơn vị tính'] ?? row['Đơn vị'] ?? row['unit'] ?? '').toString().trim(),
               manufacturer: row['Nhà sản xuất'] ?? row['manufacturer'] ?? null,
               notes: row['Ghi chú'] ?? row['notes'] ?? null,
             })).filter((drug: any) => drug.tradeName && drug.activeIngredient);
@@ -1776,22 +1809,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
             return res.status(400).json({ message: "File không có dữ liệu" });
           }
 
-          // Validate required columns
+          // Validate required columns (support multiple Vietnamese header formats)
           const firstRow: any = data[0];
-          const hasVietnameseHeaders = 'Tên thuốc' in firstRow || 'Hoạt chất' in firstRow;
+          const hasVietnameseHeaders = 
+            'Tên thuốc' in firstRow || 
+            'Tên thuốc, nồng độ, hàm lượng' in firstRow || 
+            'Hoạt chất' in firstRow || 
+            'Tên hoạt chất' in firstRow;
           const hasEnglishHeaders = 'tradeName' in firstRow || 'activeIngredient' in firstRow;
           
           if (!hasVietnameseHeaders && !hasEnglishHeaders) {
             return res.status(400).json({ 
-              message: "File thiếu cột bắt buộc. Cần có: 'Tên thuốc', 'Hoạt chất' hoặc 'tradeName', 'activeIngredient'" 
+              message: "File thiếu cột bắt buộc. Cần có: 'Tên thuốc', 'Tên hoạt chất' hoặc 'tradeName', 'activeIngredient'" 
             });
           }
 
           drugs = data.map((row: any) => ({
-            tradeName: (row['Tên thuốc'] ?? row['tradeName'] ?? '').toString().trim(),
-            activeIngredient: (row['Hoạt chất'] ?? row['activeIngredient'] ?? '').toString().trim(),
+            drugCode: (row[' Mã dược '] ?? row['Mã dược'] ?? row['drugCode'] ?? '').toString().trim() || null,
+            tradeName: (row['Tên thuốc, nồng độ, hàm lượng'] ?? row['Tên thuốc'] ?? row['tradeName'] ?? '').toString().trim(),
+            activeIngredient: (row['Tên hoạt chất'] ?? row['Hoạt chất'] ?? row['activeIngredient'] ?? '').toString().trim(),
             strength: (row['Hàm lượng'] ?? row['strength'] ?? '').toString().trim(),
-            unit: (row['Đơn vị'] ?? row['unit'] ?? '').toString().trim(),
+            unit: (row['Đơn vị tính'] ?? row['Đơn vị'] ?? row['unit'] ?? '').toString().trim(),
             manufacturer: row['Nhà sản xuất'] ?? row['manufacturer'] ?? null,
             notes: row['Ghi chú'] ?? row['notes'] ?? null,
           })).filter((drug: any) => drug.tradeName && drug.activeIngredient);
