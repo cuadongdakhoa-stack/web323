@@ -45,10 +45,13 @@ export default function Dashboard() {
       <div className="mb-12 text-center relative">
         <div className="absolute inset-0 bg-tech-gradient-subtle rounded-3xl -z-10"></div>
         <div className="py-16 px-8">
-          <h1 className="text-5xl font-bold mb-4">
-            Chào mừng trở lại, <span className="text-tech-gradient">{userData?.user?.fullName}</span>
+          <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold mb-4">
+            Chào mừng trở lại,{" "}
+            <span className="text-tech-gradient whitespace-nowrap inline-block">
+              {userData?.user?.fullName}
+            </span>
           </h1>
-          <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
+          <p className="text-lg sm:text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
             Quản lý và phân tích các ca lâm sàng của bạn với trợ lý AI
           </p>
           <Button 
