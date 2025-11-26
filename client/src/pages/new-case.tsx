@@ -166,14 +166,13 @@ export default function NewCase() {
   }, [formData, medications, secondaryDiagnoses]);
 
   const uploadMutation = useMutation({
-    mutationFn: async ({ files, fileGroup }: { files: File[]; fileGroup?: string }) => {
+    mutationFn: async ({ files, fileGroup, keepProgressBar }: { files: File[]; fileGroup?: string; keepProgressBar?: boolean }) => {
       const allExtractedData: any[] = [];
       const errors: string[] = [];
       const failedFiles: File[] = [];
       
       try {
         setIsExtracting(true);
-        setExtractionProgress(0);
         
         const totalFiles = files.length;
         const BATCH_SIZE = 10;
@@ -258,11 +257,15 @@ export default function NewCase() {
         
         return { data: allExtractedData, errors, failedFiles };
       } finally {
-        setTimeout(() => {
-          setIsExtracting(false);
-          setExtractionProgress(0);
-          setExtractionStage("");
-        }, 1000);
+        // Only hide progress bar if keepProgressBar is false (default behavior)
+        // When running sequential analysis, we want to keep the bar visible
+        if (!keepProgressBar) {
+          setTimeout(() => {
+            setIsExtracting(false);
+            setExtractionProgress(0);
+            setExtractionStage("");
+          }, 1000);
+        }
       }
     },
     onSuccess: (result) => {
@@ -490,13 +493,13 @@ export default function NewCase() {
     const analysisQueue = [];
     
     if (selectedFiles.length > 0) {
-      analysisQueue.push({ files: selectedFiles, fileGroup: 'admin' });
+      analysisQueue.push({ files: selectedFiles, fileGroup: 'admin', label: 'Bệnh án' });
     }
     if (selectedFilesLab.length > 0) {
-      analysisQueue.push({ files: selectedFilesLab, fileGroup: 'lab' });
+      analysisQueue.push({ files: selectedFilesLab, fileGroup: 'lab', label: 'Cận lâm sàng' });
     }
     if (selectedFilesPrescription.length > 0) {
-      analysisQueue.push({ files: selectedFilesPrescription, fileGroup: 'prescription' });
+      analysisQueue.push({ files: selectedFilesPrescription, fileGroup: 'prescription', label: 'Tờ điều trị' });
     }
 
     if (analysisQueue.length === 0) {
@@ -508,9 +511,34 @@ export default function NewCase() {
       return;
     }
 
-    // Run sequentially
-    for (const item of analysisQueue) {
-      await uploadMutation.mutateAsync(item);
+    try {
+      // Run sequentially with progress tracking
+      for (let i = 0; i < analysisQueue.length; i++) {
+        const item = analysisQueue[i];
+        const isLastItem = i === analysisQueue.length - 1;
+        
+        // Update stage to show overall progress
+        setExtractionStage(`Đang phân tích ${item.label} (${i + 1}/${analysisQueue.length})...`);
+        
+        // Keep progress bar visible until the last item
+        await uploadMutation.mutateAsync({
+          ...item,
+          keepProgressBar: !isLastItem
+        });
+      }
+      
+      // Final cleanup after all groups are processed
+      setTimeout(() => {
+        setIsExtracting(false);
+        setExtractionProgress(0);
+        setExtractionStage("");
+      }, 1500);
+      
+    } catch (error) {
+      // Ensure cleanup on error
+      setIsExtracting(false);
+      setExtractionProgress(0);
+      setExtractionStage("");
     }
   };
 
