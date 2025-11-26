@@ -887,10 +887,25 @@ YÊU CẦU:
   if (medicationSegments.length > 0) {
     medicationTimelineSection = medicationSegments.map((segment, idx) => {
       const medList = segment.medications.map((med: any, medIdx: number) => {
-        const formularyInfo = drugLookup.get(med.drugName.toLowerCase());
-        const drugInfo = formularyInfo 
-          ? `${med.drugName} (${formularyInfo.activeIngredient} ${formularyInfo.strength}${formularyInfo.unit})`
-          : med.drugName;
+        // Priority: 1) Use existing activeIngredient from med object (enriched)
+        //           2) Lookup from drugFormulary
+        //           3) Fallback to drugName only
+        let drugInfo = med.drugName;
+        
+        if (med.activeIngredient) {
+          // Use enriched data from medication record
+          const strengthInfo = (med.strength && med.unit) 
+            ? ` ${med.strength}${med.unit}` 
+            : '';
+          drugInfo = `${med.drugName} (${med.activeIngredient}${strengthInfo})`;
+        } else {
+          // Fallback to drugFormulary lookup
+          const formularyInfo = drugLookup.get(med.drugName.toLowerCase());
+          if (formularyInfo) {
+            drugInfo = `${med.drugName} (${formularyInfo.activeIngredient} ${formularyInfo.strength}${formularyInfo.unit})`;
+          }
+        }
+        
         return `   ${medIdx + 1}. ${drugInfo} - ${med.prescribedDose} ${med.prescribedRoute} ${med.prescribedFrequency}`;
       }).join('\n');
       
@@ -899,10 +914,25 @@ YÊU CẦU:
   } else {
     // Fallback to flat list if no grouping
     medicationTimelineSection = caseData.medications?.map((med: any, idx: number) => {
-      const formularyInfo = drugLookup.get(med.drugName.toLowerCase());
-      const drugInfo = formularyInfo 
-        ? `${med.drugName} (${formularyInfo.activeIngredient} ${formularyInfo.strength}${formularyInfo.unit})`
-        : med.drugName;
+      // Priority: 1) Use existing activeIngredient from med object (enriched)
+      //           2) Lookup from drugFormulary
+      //           3) Fallback to drugName only
+      let drugInfo = med.drugName;
+      
+      if (med.activeIngredient) {
+        // Use enriched data from medication record
+        const strengthInfo = (med.strength && med.unit) 
+          ? ` ${med.strength}${med.unit}` 
+          : '';
+        drugInfo = `${med.drugName} (${med.activeIngredient}${strengthInfo})`;
+      } else {
+        // Fallback to drugFormulary lookup
+        const formularyInfo = drugLookup.get(med.drugName.toLowerCase());
+        if (formularyInfo) {
+          drugInfo = `${med.drugName} (${formularyInfo.activeIngredient} ${formularyInfo.strength}${formularyInfo.unit})`;
+        }
+      }
+      
       return `
 ${idx + 1}. ${drugInfo}
    - Chỉ định: ${med.indication || "Không rõ"}
@@ -1314,12 +1344,31 @@ LƯU Ý QUAN TRỌNG:
   let userPrompt = userMessage;
 
   if (context?.caseData) {
+    // Build medication list with activeIngredient for better analysis
+    let medicationList = '';
+    if (context.caseData.medications && Array.isArray(context.caseData.medications) && context.caseData.medications.length > 0) {
+      medicationList = '\n💊 Thuốc đang dùng:\n' + context.caseData.medications.map((med: any, idx: number) => {
+        let drugInfo = med.drugName;
+        
+        // Add activeIngredient if available (from enrichment or database)
+        if (med.activeIngredient) {
+          const strengthInfo = (med.strength && med.unit) 
+            ? ` ${med.strength}${med.unit}` 
+            : '';
+          drugInfo = `${med.drugName} (${med.activeIngredient}${strengthInfo})`;
+        }
+        
+        const doseInfo = `${med.prescribedDose || ''} ${med.prescribedRoute || ''} ${med.prescribedFrequency || ''}`.trim();
+        return `   ${idx + 1}. ${drugInfo}${doseInfo ? ` - ${doseInfo}` : ''}`;
+      }).join('\n');
+    }
+    
     userPrompt = `[THÔNG TIN CA BỆNH CỤ THỂ - PHÂN TÍCH THEO NGỮ CẢNH NÀY]
 📋 Bệnh nhân: ${context.caseData.patientName}, ${context.caseData.patientAge} tuổi, ${context.caseData.patientGender}
 📌 Chẩn đoán: ${context.caseData.diagnosis}
 ${context.caseData.egfr ? `🔬 CrCl: ${context.caseData.egfr} mL/min (Cockcroft-Gault) - ${context.caseData.egfr < 60 ? 'CẦN CHỈNH LIỀU!' : 'bình thường'}` : ''}
 ${context.caseData.medicalHistory ? `📝 Tiền sử: ${context.caseData.medicalHistory}` : ''}
-${context.caseData.allergies ? `⚠️ Dị ứng: ${context.caseData.allergies}` : ''}
+${context.caseData.allergies ? `⚠️ Dị ứng: ${context.caseData.allergies}` : ''}${medicationList}
 
 ❓ Câu hỏi: ${userMessage}`;
   }
