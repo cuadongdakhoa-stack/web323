@@ -1011,6 +1011,9 @@ YÊU CẦU PHÂN TÍCH (CẤU TRÚC BẮT BUỘC):
 2. TƯƠNG TÁC THUỐC & THUỐC-BỆNH:
    - CHỈ tương tác có ý nghĩa lâm sàng CAO
    - Ưu tiên: xuất huyết, loạn nhịp, độc gan/thận, tụt huyết áp, hạ đường
+   - ⚠️ BẮT BUỘC: Khi nêu tương tác, PHẢI ghi cả TÊN HOẠT CHẤT
+   - Định dạng: "Tên thuốc (Hoạt chất) với Tên thuốc (Hoạt chất): ..."
+   - VD: "Plavix (Clopidogrel) với Scolanzo (Esomeprazole): Có thể giảm hoạt tính chống tiểu cầu..."
    - Nếu không có vấn đề đáng kể → ghi "Chưa thấy vấn đề đặc biệt"
 
 3. ĐIỀU CHỈNH LIỀU / TỐI ƯU HÓA:
@@ -1029,11 +1032,16 @@ YÊU CẦU PHÂN TÍCH (CẤU TRÚC BẮT BUỘC):
 TRẢ VỀ JSON (KHÔNG có markdown, KHÔNG giải thích thêm):
 {
   "renalAssessment": "phân loại suy thận + ảnh hưởng thuốc (VD: CrCl 41 mL/min - suy thận mức độ trung bình. Cần chỉnh liều thuốc thải qua thận: ...)",
-  "drugDrugInteractions": ["tương tác 1", "tương tác 2"],
+  "drugDrugInteractions": [
+    "Plavix (Clopidogrel) với Scolanzo (Esomeprazole): Có thể giảm hoạt tính chống tiểu cầu, cân nhắc theo dõi",
+    "Aspirin (Acetylsalicylic acid) với Betadine (Povidone-iodine): Tương tác..."
+  ],
   "drugDrugInteractionGroups": [
     {
       "rangeLabel": "${medicationSegments[0]?.rangeLabel || 'Toàn bộ đợt điều trị'}",
-      "interactions": ["tương tác cụ thể trong nhóm"]
+      "interactions": [
+        "Thuốc A (Hoạt chất A) với Thuốc B (Hoạt chất B): mô tả tương tác"
+      ]
     }
   ],
   "drugDiseaseInteractions": ["tương tác thuốc-bệnh"],
