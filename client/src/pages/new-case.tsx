@@ -234,7 +234,8 @@ export default function NewCase() {
             setExtractionStage(`Đang trích xuất dữ liệu từ batch ${batchIndex + 1}/${batches.length}...`);
             setExtractionProgress(batchProgress + 80);
             
-            allExtractedData.push(data);
+            // ✨ Tag data with fileGroup to track source
+            allExtractedData.push({ ...data, _fileGroup: fileGroup });
             
             // Complete this batch
             setExtractionProgress(batchProgress + (100 / batches.length));
@@ -282,6 +283,9 @@ export default function NewCase() {
       allData.forEach((data) => {
         if (!data || typeof data !== 'object') return;
 
+        // Extract fileGroup tag (added during extraction)
+        const fileGroup = data._fileGroup;
+
         setFormData((prev: typeof formData) => {
           const smartMerge = (newVal: any, oldVal: any) => {
             if (newVal !== null && newVal !== undefined && newVal !== '') return newVal;
@@ -315,7 +319,8 @@ export default function NewCase() {
           setSecondaryDiagnoses(prev => [...prev, ...newSecondaryDiagnoses]);
         }
 
-        if (data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
+        // ⚠️ CHỈ TRÍCH XUẤT MEDICATIONS TỪ TỜ ĐIỀU TRỊ (fileGroup === 'prescription')
+        if (fileGroup === 'prescription' && data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
           setMedications(prev => {
             const seenMedications = new Set<string>(
               prev.map(m => `${m.drugName.trim().toLowerCase()}_${m.usageStartDate || ''}_${m.usageEndDate || ''}`)
