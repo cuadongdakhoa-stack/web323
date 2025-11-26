@@ -70,6 +70,8 @@ export const medications = pgTable("medications", {
   adjustmentReason: text("adjustment_reason"),
   usageStartDate: timestamp("usage_start_date"),
   usageEndDate: timestamp("usage_end_date"),
+  variableDosing: boolean("variable_dosing").default(false),
+  selfSupplied: boolean("self_supplied").default(false),
   orderIndex: integer("order_index").notNull().default(0),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });

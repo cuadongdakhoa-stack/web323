@@ -1,6 +1,12 @@
 /**
- * eGFR Calculator using Cockcroft-Gault formula
+ * CrCl Calculator using Cockcroft-Gault formula
  * Based on serum creatinine, age, gender, and weight
+ * 
+ * IMPORTANT: Cockcroft-Gault calculates CrCl (Creatinine Clearance), NOT eGFR.
+ * - CrCl (Cockcroft-Gault) estimates glomerular filtration using patient weight
+ * - eGFR (MDRD/CKD-EPI) is normalized to body surface area (1.73 m²)
+ * 
+ * This function implements Cockcroft-Gault and should be labeled as "CrCl (Cockcroft-Gault)"
  */
 
 interface EGFRInput {
@@ -12,13 +18,21 @@ interface EGFRInput {
 }
 
 interface EGFRResult {
-  egfr: number; // mL/min (Cockcroft-Gault returns CrCl, not normalized to BSA)
+  egfr: number; // mL/min (CrCl from Cockcroft-Gault, not normalized to BSA)
   egfrCategory: string; // G1-G5
   renalFunction: string; // Vietnamese description
+  label: string; // "CrCl (Cockcroft-Gault)" to distinguish from eGFR methods
+  metadata?: { // Calculation inputs for transparency
+    creatinineValue: number;
+    creatinineUnit: string;
+    age: number;
+    weight: number;
+    gender: string;
+  };
 }
 
 /**
- * Calculate eGFR using Cockcroft-Gault formula
+ * Calculate CrCl using Cockcroft-Gault formula
  * Supports both mg/dL and micromol/L units for creatinine
  * Formula:
  *   Males: CrCl = ((140 - age) × weight) / (72 × SCr)
@@ -71,6 +85,14 @@ export function calculateEGFR(input: EGFRInput): EGFRResult | null {
     egfr,
     egfrCategory,
     renalFunction,
+    label: "CrCl (Cockcroft-Gault)", // ✅ Correct labeling
+    metadata: {
+      creatinineValue: creatinine,
+      creatinineUnit: creatinineUnit,
+      age,
+      weight,
+      gender,
+    },
   };
 }
 

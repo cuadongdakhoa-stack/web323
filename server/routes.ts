@@ -17,6 +17,7 @@ import {
   insertReferenceDocumentSchema,
   reportContentSchema,
   analysisResultSchema,
+  cases,
   medications,
   analyses,
   evidence,
@@ -2096,60 +2097,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Fetch cases in date range
-      const cases = await db.select()
-        .from(schema.cases)
+      const casesData = await db.select()
+        .from(cases)
         .where(
           and(
-            eq(schema.cases.userId, userId),
-            gte(schema.cases.createdAt, startDate),
-            lte(schema.cases.createdAt, endDate)
+            eq(cases.userId, userId),
+            gte(cases.createdAt, startDate),
+            lte(cases.createdAt, endDate)
           )
         );
 
       // Fetch all medications for these cases
-      const caseIds = cases.map(c => c.id);
-      const medications = caseIds.length > 0
+      const caseIds = casesData.map(c => c.id);
+      const medicationsData = caseIds.length > 0
         ? await db.select()
-            .from(schema.medications)
-            .where(inArray(schema.medications.caseId, caseIds))
+            .from(medications)
+            .where(inArray(medications.caseId, caseIds))
         : [];
 
       // Calculate statistics
-      const totalCases = cases.length;
-      const totalMedications = medications.length;
+      const totalCases = casesData.length;
+      const totalMedications = medicationsData.length;
 
       // Count medication frequency
-      const medicationCounts = new Map<string, { count: number; activeIngredient: string | null }>();
-      for (const med of medications) {
+      const medicationCounts = new Map<string, number>();
+      for (const med of medicationsData) {
         const key = med.drugName;
-        if (!medicationCounts.has(key)) {
-          medicationCounts.set(key, { count: 0, activeIngredient: med.activeIngredient });
-        }
-        medicationCounts.get(key)!.count++;
+        medicationCounts.set(key, (medicationCounts.get(key) || 0) + 1);
       }
 
       // Top 10 medications
       const topMedications = Array.from(medicationCounts.entries())
-        .map(([drugName, data]) => ({ drugName, ...data }))
+        .map(([drugName, count]) => ({ drugName, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 10);
 
       // Fetch analyses to count interactions
-      const analyses = caseIds.length > 0
+      const analysesData = caseIds.length > 0
         ? await db.select()
-            .from(schema.analyses)
-            .where(inArray(schema.analyses.caseId, caseIds))
+            .from(analyses)
+            .where(inArray(analyses.caseId, caseIds))
         : [];
 
       let totalInteractions = 0;
       let totalDoseAdjustments = 0;
       const interactionCounts = new Map<string, number>();
 
-      for (const analysis of analyses) {
+      for (const analysis of analysesData) {
         try {
-          const structured = typeof analysis.structuredAnalysis === 'string'
-            ? JSON.parse(analysis.structuredAnalysis)
-            : analysis.structuredAnalysis;
+          const structured = typeof analysis.result === 'string'
+            ? JSON.parse(analysis.result)
+            : analysis.result;
 
           if (structured?.drugDrugInteractions) {
             totalInteractions += structured.drugDrugInteractions.length;

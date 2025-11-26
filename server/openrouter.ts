@@ -42,6 +42,9 @@ const extractedDataSchema = z.object({
     route: z.string().nullable().optional(),
     usageStartDate: z.string().nullable().optional(), // ISO date YYYY-MM-DD
     usageEndDate: z.string().nullable().optional(),   // ISO date YYYY-MM-DD
+    variableDosing: z.boolean().nullable().optional(), // ✅ Liều thay đổi theo ngày
+    selfSupplied: z.boolean().nullable().optional(),   // ✅ Thuốc tự túc
+    notes: z.string().nullable().optional(),           // ✅ Ghi chú thêm
   })).nullable().optional(),
 });
 
@@ -81,10 +84,45 @@ TRƯỜNG CHÍNH (quan trọng):
 - medications: null (thuốc sẽ được trích xuất từ Tờ điều trị)
 
 QUY TẮC TRÍCH XUẤT CHẨN ĐOÁN (CỰC KỲ QUAN TRỌNG):
-1. Tìm mục (15) hoặc "Chẩn đoán xác định" → diagnosisMain
-2. Tìm mục (16) hoặc "Mã bệnh" → icdCodes.main
-3. Tìm mục (17) hoặc "Bệnh kèm theo" → diagnosisSecondary (TÁCH TỪNG BỆNH theo dấu ; hoặc ,)
-4. Tìm mục (18) hoặc "Mã bệnh kèm theo" → icdCodes.secondary (TÁCH TỪNG MÃ theo dấu ; hoặc ,)
+
+1. NGUỒN DỮ LIỆU (TUYỆT ĐỐI KHÔNG HALLUCINATE):
+   - CHỈ trích xuất bệnh được GHI RÕ trong tài liệu
+   - Tìm mục (15) hoặc "Chẩn đoán xác định" → diagnosisMain
+   - Tìm mục (17) hoặc "Bệnh kèm theo" hoặc "Chẩn đoán ra viện" → diagnosisSecondary
+   - KHÔNG ĐƯỢC tự suy luận hay thêm bệnh dựa vào triệu chứng
+
+2. DE-DUPLICATE DIAGNOSES (Loại bỏ trùng lặp):
+   - Chuẩn hóa: lowercase + bỏ dấu câu
+   - So sánh: nếu 2 bệnh giống nhau → chỉ giữ 1
+   
+   VÍ DỤ:
+   - Input: ["Thoái hóa khớp gối", "THOÁI HÓA KHỚP GỐI", "Thoái hóa khớp gối."]
+   - Output: ["Thoái hóa khớp gối"] (chỉ giữ 1 lần)
+
+3. MÃ ICD MAPPING (CONTROLLED TABLE):
+   - Tìm mục (16) hoặc "Mã bệnh" → icdCodes.main
+   - Tìm mục (18) hoặc "Mã bệnh kèm theo" → icdCodes.secondary
+   
+   BẢNG ICD-10 THAM KHẢO (Chỉ dùng nếu tài liệu KHÔNG CÓ mã ICD):
+   - Tăng huyết áp nguyên phát → I10
+   - Đái tháo đường type 2 → E11
+   - Thoái hóa khớp gối → M17 (KHÔNG PHẢI M10!)
+   - Suy tim mạn → I50
+   - Suy thận mạn → N18
+   - Rối loạn lipid máu → E78
+   - Bệnh phổi tắc nghẽn mạn tính (COPD) → J44
+   - Loét dạ dày/tá tràng → K25/K26
+   - Xơ gan → K74
+   
+   ⚠️ QUY TẮC VÀNG:
+   - Nếu tài liệu ĐÃ CÓ mã ICD → dùng mã đó (ưu tiên tuyệt đối)
+   - Nếu tài liệu KHÔNG CÓ mã ICD + bệnh KHÔNG CÓ trong bảng trên → để "" (chuỗi rỗng)
+   - TUYỆT ĐỐI KHÔNG đoán mã ICD nếu không chắc chắn
+
+4. TÁCH BỆNH KÈM THEO:
+   - TÁCH TỪNG BỆNH theo dấu ; hoặc ,
+   - Loại bỏ trùng lặp (sau khi chuẩn hóa)
+   - Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary
 
 VÍ DỤ:
 Input: "(15) Bệnh đái tháo đường không phụ thuộc insuline (16) E11 (17) Rối loạn chuyển hóa lipoprotein;Viêm giáp;Xơ vữa động mạch (18) E78;K21;M10"
@@ -94,6 +132,30 @@ Output:
   "icdCodes": { "main": "E11", "secondary": ["E78", "K21", "M10"] },
   "diagnosisSecondary": ["Rối loạn chuyển hóa lipoprotein", "Viêm giáp", "Xơ vữa động mạch"]
 }
+
+VÍ DỤ KHÔNG CÓ MÃ ICD:
+Input: "(15) Thoái hóa khớp gối (16) (không ghi) (17) Tăng huyết áp (18) (không ghi)"
+Output:
+{
+  "diagnosisMain": "Thoái hóa khớp gối",
+  "icdCodes": { "main": "M17", "secondary": ["I10"] },
+  "diagnosisSecondary": ["Tăng huyết áp"]
+}
+
+VÍ DỤ BỆNH KHÔNG CÓ TRONG BẢNG:
+Input: "(15) Bệnh lạ không rõ (16) (không ghi)"
+Output:
+{
+  "diagnosisMain": "Bệnh lạ không rõ",
+  "icdCodes": { "main": "", "secondary": [] },
+  "diagnosisSecondary": []
+}
+
+⚠️ SAI LẦM THƯỜNG GẶP (TRÁNH):
+❌ Tự suy luận bệnh từ triệu chứng hoặc thuốc
+❌ Giữ lại bệnh trùng lặp (không de-duplicate)
+❌ Gán M10 (gout) cho thoái hóa khớp gối (phải là M17)
+❌ Tự đoán mã ICD khi không có trong tài liệu và không có trong bảng
 
 ⚠️ QUY TẮC QUAN TRỌNG:
 - CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
@@ -136,60 +198,133 @@ const TO_DIEU_TRI_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y t�
 
 Trích xuất từ TỜ ĐIỀU TRỊ / ĐƠN THUỐC. CHỈ TRÍCH XUẤT DANH SÁCH THUỐC:
 
-TRƯỜNG CHÍNH:
-- medications: [
-    {
-      "drugName": "tên thuốc chính xác",
-      "dose": "liều lượng (ví dụ: 2 nhát, 10mg, 0.4mg)",
-      "frequency": "tần suất (ví dụ: Ngày 2 lần, Sáng 1 viên tối 1 viên)",
-      "route": "đường dùng (Uống, Hít, Tiêm tĩnh mạch, Tiêm bắp)",
-      "usageStartDate": "YYYY-MM-DD",
-      "usageEndDate": "YYYY-MM-DD"
-    }
+⚠️ QUY TẮC 1: KHÔNG RƠI MẤT THUỐC (CỰC KỲ QUAN TRỌNG)
+
+PHẢI trích xuất TẤT CẢ các dòng thuốc hợp lệ. CHỈ BỎ QUA:
+
+DANH SÁCH LOẠI TRỪ (BLACKLIST - VẬT TƯ):
+- Bơm tiêm, Kim tiêm, Băng, Gạc, Găng tay, Khẩu trang
+- Ống thông (catheter), Dây truyền, Bộ truyền dịch
+- Dịch vụ y tế, Phí khám, Phí giường, Phí xét nghiệm
+- Vật tư tiêu hao y tế (không phải thuốc)
+
+✅ CHẤP NHẬN TẤT CẢ LOẠI THUỐC:
+- Thuốc Tây y (viên, viên nang, tiêm, nhỏ mắt, bôi da, xịt...)
+- Dung dịch truyền (NaCl 0.9%, Glucose, Ringer's Lactate, Lipofundin, Aminoplasmal...)
+- Thuốc Đông y, thảo dược (Hoa Đà tái tạo hoàn, Bổ can, An thần...)
+- TPBVSK (Glucosamine, Omega-3, Vitamin...)
+- Flexsa, Lipanthyl, tất cả thuốc có tên thương mại
+
+⚠️ QUY TẮC 2: NGÀY BẮT ĐẦU / KẾT THÚC - THUẬT TOÁN MIN-MAX (CỰC KỲ QUAN TRỌNG)
+
+Với mỗi thuốc (theo drugName + có thể kèm dose nếu khác hàm lượng):
+
+BƯỚC 1: Quét TOÀN BỘ tờ điều trị (tất cả các trang, tất cả các ngày, tất cả các dòng)
+BƯỚC 2: Thu thập TẤT CẢ ngày mà thuốc đó xuất hiện (dù liều có thay đổi)
+BƯỚC 3: Sắp xếp ngày tăng dần
+BƯỚC 4: 
+  - usageStartDate = ngày SỚM NHẤT trong danh sách
+  - usageEndDate = ngày MUỘN NHẤT trong danh sách
+
+⚠️ TUYỆT ĐỐI KHÔNG:
+- Cắt ngắn về ngày 25 nếu còn 26, 27, 28...
+- Cắt về ngày 01 nếu còn 03, 04, 05...
+- Bỏ qua các ngày ở giữa (kể cả khi có ngày không dùng)
+
+VÍ DỤ ĐÚNG:
+1. Thuốc A xuất hiện: 23/10, 24/10, 25/10, 27/10, 03/11, 04/11
+   → startDate: "2024-10-23", endDate: "2024-11-04" ✅
+
+2. Lovastatin xuất hiện trang 1-7 (ngày 23, 24, 25, 26, 27/10), BIẾN MẤT từ trang 8
+   → startDate: "2024-10-23", endDate: "2024-10-27" ✅
+
+3. Doxycilin: ngày 27, 28, 29, 30, 31/10, 01, 02, 03/11
+   → startDate: "2024-10-27", endDate: "2024-11-03" ✅
+
+VÍ DỤ SAI:
+❌ Thuốc xuất hiện 23-27/10 và 03-04/11 → endDate: "2024-10-27" (SAI! phải là 04/11)
+❌ Cắt về "2024-10-25" khi thực tế còn 26, 27, 28
+
+⚠️ QUY TẮC 3: TẦN SUẤT / LIỀU THAY ĐỔI THEO NGÀY
+
+Nếu thuốc có >1 mẫu tần suất/liều trong suốt quá trình điều trị:
+
+PHƯƠNG ÁN A (TỐI THIỂU - BẮT BUỘC):
+- Chọn mẫu CAO NHẤT làm frequency 
+  VD: Có "Sáng 1 viên" và "Sáng 1 viên; tối 1 viên" → chọn "Sáng 1 viên; tối 1 viên"
+- Thêm trường: "variableDosing": true hoặc "notes": "Liều thay đổi theo ngày, xem lại tờ điều trị"
+
+PHƯƠNG ÁN B (TỐT HƠN - NẾU LÀM ĐƯỢC):
+- Lưu thêm mảng "dosingSchedule": [
+    { "date": "27/10/2024", "frequency": "Sáng 1 viên; tối 1 viên", "dose": "100mg" },
+    { "date": "03/11/2024", "frequency": "Sáng 1 viên", "dose": "100mg" }
   ]
 
-⚠️ HƯỚNG DẪN TRÍCH XUẤT NGÀY THÁNG (CỰC KỲ QUAN TRỌNG):
-
-QUY TẮC VÀNG:
-- CHỈ lấy ĐÚNG ngày cuối cùng được ghi rõ trong tài liệu
-- KHÔNG tự ý kéo dài endDate ra quá ngày cuối cùng
-- Nếu "Ngày 1,2,3/1/2024" → endDate = "2024-01-03" (KHÔNG PHẢI 2024-01-06!)
+⚠️ TUYỆT ĐỐI KHÔNG:
+- Chọn mẫu THẤP NHẤT rồi gắn cho toàn bộ
+- "Ép" về 1 mẫu duy nhất khi thực tế có nhiều mẫu
 
 VÍ DỤ:
-1. Khoảng ngày rõ ràng:
-   - "Ngày 1-3/1/2024: Paracetamol" → startDate: "2024-01-01", endDate: "2024-01-03"
-   - "01/01 - 05/01/2024: Amoxicillin" → startDate: "2024-01-01", endDate: "2024-01-05"
+- Doxycyclin: 27-02/11 dùng 2 lần/ngày, 03-04/11 dùng 1 lần/ngày
+  → frequency: "Sáng 1 viên; tối 1 viên" (mẫu cao nhất)
+  → variableDosing: true
 
-2. Ngày liên tiếp:
-   - "Ngày 1,2,3/1/2024: Ceftriaxone" → startDate: "2024-01-01", endDate: "2024-01-03"
-   - "Ngày 5,6,7,8/12/2023" → startDate: "2023-12-05", endDate: "2023-12-08"
+⚠️ QUY TẮC 4: TỰ TÚC (SELF-PURCHASED / OUTPATIENT MEDICATION)
 
-3. Ngày không liên tiếp:
-   - "Ngày 1,3,5/1/2024" → startDate: "2024-01-01", endDate: "2024-01-05"
+Nếu bất kỳ ngày nào thuốc được đánh dấu "tự túc" / "TT" / "self-purchased" / "BN tự mua":
+- Thêm trường: "selfSupplied": true
 
-4. MEDICATION SWITCHING (rất quan trọng):
-   - "Ngày 23-27/10: Lovastatin 10mg. Ngày 28/10: Lovastatin NGƯNG, Atorvastatin BẮT ĐẦU"
-     → Lovastatin: { startDate: "2024-10-23", endDate: "2024-10-27" }
-     → Atorvastatin: { startDate: "2024-10-28", endDate: null hoặc ngày xuất viện }
-   
-   - Nếu Tờ điều trị nhiều trang:
-     • Trang 1-7 (23-27/10): có Lovastatin
-     • Trang 8+ (28/10+): KHÔNG CÓ Lovastatin, CHỈ CÓ Atorvastatin
-     → ĐÂY LÀ SWITCHING! Lovastatin endDate = "2024-10-27"
+VÍ DỤ:
+- "Omega-3 (tự túc)" → selfSupplied: true
+- "Glucosamine - TT" → selfSupplied: true
 
-⚠️ SAI LẦM THƯỜNG GẶP (TRÁNH):
-❌ "Ngày 1,2,3/1/2024" → endDate: "2024-01-06" (SAI! không có ngày 6)
-✅ "Ngày 1,2,3/1/2024" → endDate: "2024-01-03" (ĐÚNG! ngày cuối được ghi)
+Áp dụng cho MỌI THUỐC, không hard-code bệnh nhân.
 
-⚠️ ĐƯỜNG DÙNG (route):
-- "HÍT" hoặc "EVOHALER" → route: "Hít"
-- "UỐNG" hoặc "Viên" → route: "Uống"
-- "TIÊM IV" → route: "Tiêm tĩnh mạch"
-- "TIÊM IM" → route: "Tiêm bắp"
+⚠️ QUY TẮC 5: ĐƯỜNG DÙNG (route)
 
-⚠️ LIỀU LƯỢNG (dose):
-- "Tamsulosin 0,4mg" → dose: "0.4mg" (KHÔNG PHẢI 4mg)
-- "2 nhát" → dose: "2 nhát"
+- "HÍT" / "EVOHALER" / "INHALER" → route: "Hít"
+- "UỐNG" / "ORAL" / "PO" / "Viên" / "Viên nang" → route: "Uống"
+- "TIÊM TM" / "IV" / "Tiêm tĩnh mạch" → route: "Tiêm tĩnh mạch"
+- "TIÊM BẮP" / "IM" → route: "Tiêm bắp"
+- "TRUYỀN" / "Infusion" → route: "Truyền tĩnh mạch"
+- "BÔI" / "Topical" → route: "Bôi da"
+- "NHỎ MẮT" → route: "Nhỏ mắt"
+
+JSON FORMAT:
+{
+  "medications": [
+    {
+      "drugName": "tên thuốc chính xác (bao gồm cả Ringer's, Flexsa, Hoa Đà...)",
+      "dose": "liều (ví dụ: 100mg, 2 nhát, 500ml)",
+      "frequency": "tần suất CAO NHẤT (ví dụ: Sáng 1 viên; tối 1 viên)",
+      "route": "đường dùng (Uống, Hít, Tiêm tĩnh mạch, Truyền tĩnh mạch...)",
+      "usageStartDate": "YYYY-MM-DD (ngày SỚM NHẤT xuất hiện)",
+      "usageEndDate": "YYYY-MM-DD (ngày MUỘN NHẤT xuất hiện)",
+      "variableDosing": true/false (true nếu liều thay đổi),
+      "selfSupplied": true/false (true nếu có đánh dấu tự túc),
+      "notes": "Ghi chú (nếu có thông tin đặc biệt)"
+    }
+  ]
+}
+
+⚠️ MEDICATION SWITCHING (quan trọng):
+- Nếu thuốc A biến mất và thuốc B xuất hiện → 2 thuốc riêng
+- Lovastatin (23-27/10) NGƯNG → Atorvastatin (28/10+) BẮT ĐẦU
+  → 2 dòng riêng, không gộp
+
+⚠️ SAI LẦM THƯỜNG GẶP CẦN TRÁNH:
+❌ Bỏ sót Ringer's, Lipofundin, Flexsa, Hoa Đà tái tạo hoàn
+❌ Cắt ngắn endDate khi thực tế thuốc còn xuất hiện thêm nhiều ngày
+❌ Chọn "Sáng 1 viên" khi có cả "Sáng 1 viên; tối 1 viên"
+❌ Không đánh dấu variableDosing khi liều thay đổi
+❌ Không đánh dấu selfSupplied khi có ghi "tự túc"
+
+✅ CHECKLIST TRƯỚC KHI TRẢ KẾT QUẢ:
+1. Đã quét HẾT tất cả các trang tờ điều trị chưa?
+2. Mỗi thuốc đã lấy ngày MIN và MAX chưa?
+3. Có thuốc nào bị bỏ sót (kiểm tra số lượng)?
+4. Liều thay đổi đã đánh dấu variableDosing chưa?
+5. Tự túc đã đánh dấu selfSupplied chưa?
 
 ⚠️ CÁC TRƯỜNG SAU ĐỂ null:
 - patientName, patientAge, patientGender, patientWeight, patientHeight: null
@@ -589,10 +724,87 @@ Lưu ý:
   };
 }
 
+// ============================================
+// DDI WHITELIST - DRUG-DRUG INTERACTIONS
+// ============================================
+// Only interactions from validated sources (Micromedex, Lexicomp, BNF, UpToDate) should be reported.
+// LLM CANNOT invent new interactions. LLM ONLY explains whitelisted pairs.
+//
+// STATIN RULES:
+// - Double-statin warning ONLY if overlap in dates (not sequential switch)
+//   Example: Lovastatin (23-27/10) → Atorvastatin (28/10+) = NO OVERLAP, NO WARNING
+//   Example: Lovastatin (23-30/10) + Atorvastatin (25/10-05/11) = OVERLAP, WARNING
+//
+// POTASSIUM (K+) INTERACTION RULES:
+// - Spironolactone + beta-blocker (metoprolol, bisoprolol, carvedilol) → NO K+ WARNING
+// - Spironolactone + (ACEI, ARB, ARNI, NSAID, Trimethoprim, Heparin) with overlap → K+ WARNING
+// - Renal impairment: Allow "monitor K+ due to renal + spironolactone" but NOT for spiro+metoprolol
+//
+// HERBAL/SUPPLEMENTS:
+// - If no DDI data → label as "limited evidence" or "unclear"
+// - Generic warning: "monitor if used with anticoagulants/antiplatelets"
+// - DO NOT assert strong claims like "reduces clopidogrel efficacy" without source
+
 export async function analyzePatientCase(caseData: any, drugFormulary?: any[]): Promise<any> {
   const { groupMedicationsByDateOverlap } = await import('./medicationTimeline');
   
-  const systemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp tại bệnh viện Việt Nam. Nhiệm vụ của bạn là phân tích ca bệnh và đưa ra khuyến nghị về điều chỉnh liều thuốc, tương tác thuốc, và các vấn đề liên quan.`;
+  const systemPrompt = `Bạn là DƯỢC SĨ LÂM SÀNG, phân tích ca bệnh nội trú người lớn để hỗ trợ bác sĩ và điều dưỡng.
+
+MỤC TIÊU:
+Xác định NHỮNG VẤN ĐỀ DƯỢC LÂM SÀNG QUAN TRỌNG NHẤT, bao gồm:
+1. Ảnh hưởng của chức năng thận / gan / tim tới dùng thuốc.
+2. Tương tác thuốc – thuốc và thuốc – bệnh có ý nghĩa lâm sàng.
+3. Liều dùng chưa phù hợp (quá cao, quá thấp, trùng nhóm, cần chỉnh theo thận/gan).
+4. Các nguy cơ đặc biệt (xuất huyết, độc thận, độc gan, loạn nhịp, tụt huyết áp, hạ đường huyết…).
+5. Kế hoạch theo dõi và cảnh báo gọn cho bác sĩ/dược sĩ.
+
+NGUYÊN TẮC (PHẢI TUÂN THỦ):
+
+1. Chức năng thận & gan:
+   - Nếu có CrCl tính theo Cockcroft–Gault → gọi đúng "CrCl (Cockcroft–Gault)", KHÔNG gọi nhầm là eGFR.
+   - Nếu có eGFR → ghi rõ "eGFR".
+   - Phân loại suy thận (bình thường/nhẹ/trung bình/nặng/giai đoạn cuối) và CHỈ liên hệ với thuốc thải qua thận.
+   - Gan: chỉ nhắc khi có men gan tăng rõ, bệnh gan nền, hoặc dùng thuốc độc gan.
+
+2. Tương tác thuốc–thuốc & thuốc–bệnh:
+   - CHỈ nêu tương tác có ý nghĩa lâm sàng theo kiến thức dược lý chuẩn; nếu chỉ là suy đoán yếu → BỎ QUA.
+   - Ưu tiên: chống đông/kháng tiểu cầu + NSAID/SSRI; thuốc độc thận; thuốc tim mạch loạn nhịp.
+   - KHÔNG coi là tương tác quan trọng và KHÔNG nhắc:
+     • Clopidogrel + thuốc chẹn beta (metoprolol/Betaloc)
+     • Spironolactone + thuốc chẹn beta
+     • Statin + thuốc chẹn beta
+     • Các câu mơ hồ "thuốc A + B có thể tăng tác dụng phụ" mà không có cơ chế rõ
+   - 2 statin (lovastatin + atorvastatin):
+     • CHỈ cảnh báo khi THỜI GIAN DÙNG TRÙNG NHAU
+     • Nếu statin A ngừng rồi mới bắt đầu statin B → coi là ĐỔI THUỐC, KHÔNG cảnh báo
+   - PPI + clopidogrel:
+     • Omeprazole/esomeprazole: có dữ liệu làm giảm hoạt tính → có thể cảnh báo
+     • PPI khác (pantoprazole, lansoprazole/Scolanzo): bằng chứng yếu → ghi "bằng chứng hạn chế, có thể tiếp tục, theo dõi lâm sàng"
+   - Thuốc đông y/thảo dược/TPBVSK: nếu không có dữ liệu chắc → ghi "bằng chứng hạn chế, chưa rõ nguy cơ"
+
+3. Điều chỉnh liều:
+   - Xem xét: tuổi, cân nặng, suy thận, suy gan, suy tim.
+   - ĐƯỢC đề xuất chỉnh liều khi: thuốc thải qua thận + suy thận (CrCl < 60), đặc biệt < 30; thuốc khoảng điều trị hẹp.
+   - KHÔNG tự động giảm liều nếu: thuốc chuyển hóa qua gan và suy thận nhẹ–trung bình mà không cần chỉnh.
+   - Spironolactone/lợi tiểu giữ kali: ở suy thận trung bình → ưu tiên "THEO DÕI kali & creatinin"; chỉ nêu "giảm/ngừng" nếu kali tăng, suy thận nặng (CrCl < 30), hoặc nhiều thuốc tăng kali.
+   - Nêu phạm vi: "liều tham khảo trong suy thận mức này là…; cần đối chiếu phác đồ bệnh viện".
+
+4. Theo dõi:
+   - Đề xuất CỤ THỂ: creatinin/eGFR, kali, men gan, dấu hiệu chảy máu, Hb…
+   - Tránh chung chung "theo dõi tác dụng phụ".
+
+5. Trình bày (LUÔN theo 5 mục):
+   1) Đánh giá chức năng cơ quan liên quan
+   2) Tương tác thuốc & thuốc–bệnh quan trọng
+   3) Điều chỉnh liều / tối ưu hóa điều trị
+   4) Theo dõi cần thiết
+   5) Cảnh báo & ghi chú
+   - Mỗi mục chỉ 3-7 ý chính, tránh dàn trải.
+   - Nếu không có vấn đề: "Trong mục này chưa phát hiện vấn đề đặc biệt."
+
+YÊU CẦU:
+- Tiếng Việt, giọng trung lập, chuyên môn dễ hiểu.
+- Không nhắc "tôi là AI/mô hình", không trích tài liệu, chỉ phân tích ca bệnh.`;
 
   // Group medications by date overlap
   const medicationSegments = groupMedicationsByDateOverlap(caseData.medications || []);
@@ -642,85 +854,98 @@ ${idx + 1}. ${drugInfo}
   // Fetch reference documents for AI context
   const referenceContext = await buildReferenceDocumentsContext(['Guidelines', 'Pharmacology', 'Drug Information', 'Clinical Practice']);
 
-  const userPrompt = `Hãy phân tích ca bệnh sau và cung cấp đánh giá lâm sàng:${referenceContext}
+  const userPrompt = `PHÂN TÍCH CA BỆNH SAU:${referenceContext}
 
-THÔNG TIN BỆNH NHÂN:
-- Họ tên: ${caseData.patientName}
-- Tuổi: ${caseData.patientAge}
-- Giới tính: ${caseData.patientGender}
-- Cân nặng: ${caseData.patientWeight || "Không có"} kg
-- Chiều cao: ${caseData.patientHeight || "Không có"} cm
+DỮ LIỆU BỆNH NHÂN:
+- Tuổi: ${caseData.patientAge} | Giới: ${caseData.patientGender} | Cân nặng: ${caseData.patientWeight || "?"} kg | Chiều cao: ${caseData.patientHeight || "?"} cm
 
-CHẨN ĐOÁN: ${caseData.diagnosis}
+CHẨN ĐOÁN & BỆNH KÈM:
+${caseData.diagnosis}
 
-TIỀN SỬ BỆNH: ${caseData.medicalHistory || "Không có"}
+TIỀN SỬ BỆNH:
+${caseData.medicalHistory || "Không có"}
 
-DỊ ỨNG: ${caseData.allergies || "Không có"}
+DỊ ỨNG THUỐC:
+${caseData.allergies || "Không có"}
 
-XÉT NGHIỆM: ${JSON.stringify(caseData.labResults || {}, null, 2)}
+XÉT NGHIỆM:
+${JSON.stringify(caseData.labResults || {}, null, 2)}
+- CrCl (Cockcroft-Gault): ${caseData.egfr || "Chưa tính"} mL/min
 
-eGFR: ${caseData.egfr || "Chưa tính"} mL/min (Cockcroft-Gault)
-
-DANH SÁCH THUỐC THEO THỜI GIAN SỬ DỤNG:
+THUỐC ĐANG DÙNG (PHÂN NHÓM THEO THỜI GIAN):
 ${medicationTimelineSection}${formularyNote}
 
-QUAN TRỌNG - QUY TẮC KIỂM TRA TƯƠNG TÁC THUỐC:
+⚠️ QUY TẮC TƯƠNG TÁC (QUAN TRỌNG):
 ${medicationSegments.length > 0 
-  ? `- Danh sách thuốc đã được PHÂN NHÓM theo thời gian sử dụng
-- CHỈ kiểm tra tương tác giữa các thuốc TRONG CÙNG NHÓM (cùng thời điểm)
-- KHÔNG kiểm tra tương tác giữa thuốc ở nhóm này với thuốc ở nhóm khác
-- ⚠️ ĐẶC BIỆT CHÚ Ý MEDICATION SWITCHING:
-  • Nếu thuốc A kết thúc ngày X và thuốc B bắt đầu ngày X+1 → ĐÂY LÀ THAY THUỐC (sequential)
-  • Ví dụ: Lovastatin (23-27/10) NGƯNG, Atorvastatin (28/10-04/11) BẮT ĐẦU → KHÔNG tương tác
-  • Ví dụ: Ceftazidime (01-07/01) NGƯNG, Ceftriaxone (08-14/01) BẮT ĐẦU → KHÔNG tương tác
-  • CHỈ BÁO TƯƠNG TÁC KHI 2 THUỐC DÙNG ĐỒNG THỜI (overlap thời gian)
-- Ví dụ KHÔNG overlap: Thuốc A (01/01-03/01) và Thuốc B (04/01-06/01) → KHÔNG tương tác
-- Ví dụ CÓ overlap: Thuốc C (01/01-05/01) và Thuốc D (03/01-08/01) → CÓ tương tác (03/01-05/01)
-- ⚠️ TUYỆT ĐỐI KHÔNG kiểm tra tương tác giữa các thuốc ở nhóm khác nhau (vì không dùng cùng thời điểm)
+  ? `- Thuốc đã PHÂN NHÓM theo thời gian dùng
+- CHỈ kiểm tra tương tác TRONG CÙNG NHÓM (overlap thời gian)
+- KHÔNG kiểm tra tương tác giữa các nhóm khác nhau
 
-⚠️ DANH SÁCH TƯƠNG TÁC SAI - KHÔNG BÁO CÁO:
-  • Spironolactone + Metoprolol → KHÔNG CÓ TƯƠNG TÁC Ý NGHĨA LÂM SÀNG (bỏ qua)
-  • Spironolactone + beta-blocker (bất kỳ) → KHÔNG BÁO (phối hợp an toàn trong suy tim)
-  
-⚠️ TƯƠNG TÁC CẦN LƯU Ý NHẸ (KHÔNG CẢNH BÁO NẶNG):
-  • Clopidogrel + PPI (Omeprazole, Esomeprazole): "Lưu ý theo dõi hiệu quả kháng kết tập tiểu cầu. Có thể thay PPI khác nếu cần." (KHÔNG DÙNG từ "cảnh báo" hay "nguy hiểm")
-  • Clopidogrel + Aspirin: "Phối hợp điều trị kháng kết tập tiểu cầu kép - giám sát nguy cơ chảy máu." (ngữ điệu nhẹ nhàng)`
-  : `- Danh sách thuốc CHƯA có thông tin ngày tháng rõ ràng
-- Kiểm tra tất cả tương tác có thể xảy ra
-  
-⚠️ DANH SÁCH TƯƠNG TÁC SAI - KHÔNG BÁO CÁO:
-  • Spironolactone + Metoprolol → KHÔNG BÁO (phối hợp an toàn)
-  
-⚠️ TƯƠNG TÁC CẦN LƯU Ý NHẸ:
-  • Clopidogrel + PPI: lưu ý nhẹ, không cảnh báo nặng
-  • Clopidogrel + Aspirin: phối hợp điều trị, giám sát chảy máu`}
+⚠️ MEDICATION SWITCHING:
+  • Thuốc A kết thúc ngày X, thuốc B bắt đầu ngày X+1 → THAY THUỐC (sequential) → KHÔNG tương tác
+  • VD: Lovastatin (23-27/10) → Atorvastatin (28/10-04/11) = KHÔNG overlap = KHÔNG cảnh báo
+  • CHỈ BÁO khi 2 thuốc DÙNG ĐỒNG THỜI (có overlap)
 
-Hãy cung cấp phân tích chi tiết bao gồm:
-1. Đánh giá chức năng thận và tác động đến các thuốc
-2. Kiểm tra tương tác thuốc-thuốc (${medicationSegments.length > 0 ? 'phân nhóm theo thời gian' : 'tổng hợp'})
-3. Kiểm tra tương tác thuốc-bệnh
-4. Khuyến nghị điều chỉnh liều (nếu cần)
-5. Các lưu ý theo dõi và cảnh báo
+⚠️ WHITELIST-BASED DDI:
+  • CHỈ báo tương tác CÓ TRONG whitelist (Micromedex, Lexicomp, BNF, UpToDate)
+  • KHÔNG tự nghĩ tương tác mới
+  • Ưu tiên: chống đông/kháng tiểu cầu + NSAID; thuốc tim mạch loạn nhịp; độc thận; độc gan
 
-TRẢ VỀ CHỈ JSON HỢP LỆ (không có markdown, không có text khác):
+⚠️ QUY TẮC ĐẶC BIỆT:
+  • 2 STATIN: CHỈ cảnh báo nếu overlap. Sequential switch → KHÔNG cảnh báo
+  • K+ (Kali):
+    - Spironolactone + beta-blocker (metoprolol, bisoprolol...) → KHÔNG BÁO
+    - Spironolactone + (ACEI, ARB, ARNI, NSAID, Trimethoprim, Heparin) + overlap → CẦN cảnh báo
+  • Thảo dược/TPBVSK: không có dữ liệu → "bằng chứng hạn chế"
+  • Clopidogrel + PPI: lưu ý nhẹ, KHÔNG cảnh báo nặng`
+  : `- Thuốc chưa có ngày tháng rõ ràng
+- Kiểm tra tất cả tương tác có thể
+
+⚠️ WHITELIST DDI:
+  • CHỈ báo tương tác từ nguồn uy tín
+  • Spironolactone + beta-blocker → KHÔNG BÁO
+  • Clopidogrel + PPI → lưu ý nhẹ`}
+
+YÊU CẦU PHÂN TÍCH (CẤU TRÚC BẮT BUỘC):
+1. ĐÁNH GIÁ CHỨC NĂNG CƠ QUAN:
+   - Thận: phân loại suy thận, ảnh hưởng thuốc thải qua thận
+   - Gan: nếu có tăng men gan hoặc bệnh gan nền
+   - Tim-mạch: nếu có suy tim, rung nhĩ, tăng huyết áp...
+   - CHỈ nhắc cơ quan liên quan đến thuốc đang dùng
+
+2. TƯƠNG TÁC THUỐC & THUỐC-BỆNH:
+   - CHỈ tương tác có ý nghĩa lâm sàng CAO
+   - Ưu tiên: xuất huyết, loạn nhịp, độc gan/thận, tụt huyết áp, hạ đường
+   - Nếu không có vấn đề đáng kể → ghi "Chưa thấy vấn đề đặc biệt"
+
+3. ĐIỀU CHỈNH LIỀU / TỐI ƯU HÓA:
+   - Xem xét: tuổi cao, suy thận, suy gan, béo phì/gầy
+   - Nêu phạm vi liều cụ thể nếu cần điều chỉnh
+   - KHÔNG tự động giảm liều thuốc chuyển hóa gan khi chỉ suy thận nhẹ
+
+4. THEO DÕI CẦN THIẾT:
+   - Xét nghiệm CỤ THỂ: SCr, Kali, men gan, INR, đường huyết...
+   - Triệu chứng lâm sàng cần quan sát
+
+5. CẢNH BÁO & GHI CHÚ:
+   - Nguy cơ cao nhất cần lưu ý
+   - Khuyến nghị cho bác sĩ/dược sĩ
+
+TRẢ VỀ JSON (KHÔNG có markdown, KHÔNG giải thích thêm):
 {
-  "renalAssessment": "đánh giá chức năng thận",
-  "drugDrugInteractions": ["tương tác tổng quan 1", "tương tác tổng quan 2"],
+  "renalAssessment": "phân loại suy thận + ảnh hưởng thuốc (VD: CrCl 41 mL/min - suy thận mức độ trung bình. Cần chỉnh liều thuốc thải qua thận: ...)",
+  "drugDrugInteractions": ["tương tác 1", "tương tác 2"],
   "drugDrugInteractionGroups": [
     {
-      "rangeLabel": "${medicationSegments[0]?.rangeLabel || 'Ngày không rõ'}",
-      "interactions": ["tương tác cụ thể trong nhóm này"]
+      "rangeLabel": "${medicationSegments[0]?.rangeLabel || 'Toàn bộ đợt điều trị'}",
+      "interactions": ["tương tác cụ thể trong nhóm"]
     }
   ],
-  "drugDiseaseInteractions": ["tương tác bệnh 1"],
-  "doseAdjustments": ["điều chỉnh 1", "điều chỉnh 2"],
-  "monitoring": ["theo dõi 1", "theo dõi 2"],
-  "warnings": ["cảnh báo 1"]
-}
-
-Lưu ý: 
-- drugDrugInteractions: Tương tác chung (backward compatibility)
-- drugDrugInteractionGroups: Tương tác phân nhóm theo thời gian (CHỈ điền nếu có >= 2 nhóm thuốc theo timeline)`;
+  "drugDiseaseInteractions": ["tương tác thuốc-bệnh"],
+  "doseAdjustments": ["điều chỉnh liều cụ thể với phạm vi"],
+  "monitoring": ["theo dõi cụ thể"],
+  "warnings": ["cảnh báo quan trọng"]
+}`;
 
   const rawAnalysis = await callGPT4(systemPrompt, userPrompt);
   
@@ -1112,163 +1337,6 @@ JSON format:
   "allergies": "string hoặc null",
   "labResults": { "creatinine": number, "creatinineUnit": "mg/dL" | "micromol/L" } hoặc null,
   "medications": [{ "drugName": "string", "dose": "string", "frequency": "string", "route": "string", "usageStartDate": "YYYY-MM-DD", "usageEndDate": "YYYY-MM-DD" }] hoặc null
-}
-
-CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
-
-  const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);  // Temperature thấp = chính xác hơn
-- Phân tách rõ CHẨN ĐOÁN CHÍNH (diagnosisMain) và BỆNH KÈM (diagnosisSecondary)
-- Tìm MÃ ICD-10 cho CẢ chẩn đoán chính VÀ TẤT CẢ bệnh kèm (nếu có ghi rõ trong tài liệu)
-- ⚠️ ĐẶC BIỆT CHÚ Ý: Nếu có bảng kê với các mục số như (15), (16), (17), (18):
-  • Mục (15) hoặc "Chẩn đoán xác định" → diagnosisMain
-  • Mục (16) hoặc "Mã bệnh" → icdCodes.main
-  • Mục (17) hoặc "Bệnh kèm theo" → diagnosisSecondary (PHẢI TÁCH TỪNG BỆNH, ngăn cách bởi dấu ; hoặc ,)
-  • Mục (18) hoặc "Mã bệnh kèm theo" → icdCodes.secondary (PHẢI TÁCH TỪNG MÃ, ngăn cách bởi dấu ; hoặc ,)
-  
-VÍ DỤ BẢNG KÊ:
-- Input: "(15) Bệnh đái tháo đường không phụ thuộc insuline (16) Mã bệnh: E11 (17) Bệnh kèm theo: Rối loạn chuyển hóa lipoprotein;Viêm giáp;Xơ vữa động mạch (18) Mã bệnh kèm theo: E78;K21;M10"
-  → diagnosisMain: "Bệnh đái tháo đường không phụ thuộc insuline"
-  → icdCodes.main: "E11"
-  → diagnosisSecondary: ["Rối loạn chuyển hóa lipoprotein", "Viêm giáp", "Xơ vữa động mạch"]
-  → icdCodes.secondary: ["E78", "K21", "M10"]
-
-- Input: "(17) Viêm gan mãn, không phân loại nơi khác;Các thể loại đái tháo đường không xác định;Rối loạn chuyển hóa lipoprotein;Gút (thống phong);Phù, chưa phân loại nơi khác;Tăng sản tuyến tiền liệt;Các bệnh phổi tắc nghẽn mãn tính khác (18) K73;E14;E78;M10;R60;N40;J44"
-  → diagnosisSecondary: ["Viêm gan mãn, không phân loại nơi khác", "Các thể loại đái tháo đường không xác định", "Rối loạn chuyển hóa lipoprotein", "Gút (thống phong)", "Phù, chưa phân loại nơi khác", "Tăng sản tuyến tiền liệt", "Các bệnh phổi tắc nghẽn mãn tính khác"]
-  → icdCodes.secondary: ["K73", "E14", "E78", "M10", "R60", "N40", "J44"]
-
-⚠️ LƯU Ý: 
-- MỖI BỆNH CHỈ GHI 1 LẦN, không duplicate
-- Tách chính xác theo dấu chấm phẩy (;) hoặc dấu phẩy (,)
-- Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary
-
-- Ví dụ text tự do: "Chẩn đoán: Viêm phổi (J18.9). Bệnh kèm: Tăng huyết áp (I10), Đái tháo đường (E11.9)"
-  → diagnosisMain: "Viêm phổi", icdCodes.main: "J18.9"
-  → diagnosisSecondary: ["Tăng huyết áp", "Đái tháo đường"], icdCodes.secondary: ["I10", "E11.9"]
-- NGÀY NHẬP VIỆN (admissionDate): Tìm "Ngày nhập viện", "Ngày vào viện", "Admission date", "Date of admission" → Format YYYY-MM-DD
-  • Ví dụ: "Nhập viện ngày 15/01/2024" → admissionDate: "2024-01-15"
-  • Ví dụ: "Vào viện 01-01-2024" → admissionDate: "2024-01-01"
-  • Nếu không tìm thấy → admissionDate: null
-- Creatinine huyết thanh: Hỗ trợ 2 đơn vị mg/dL và micromol/L (lấy đơn vị nào có trong tài liệu)
-  • Nếu thấy "Creatinine: 1.2 mg/dL" → creatinine: 1.2, creatinineUnit: "mg/dL"
-  • Nếu thấy "Creatinine: 106 micromol/L" → creatinine: 106, creatinineUnit: "micromol/L"
-  • Nếu không thấy → creatinine: null, creatinineUnit: null
-- Trích xuất NGÀY BẮT ĐẦU và NGÀY KẾT THÚC dùng thuốc (CHÚ Ý: nhiều format khác nhau)
-- Format ngày đầu ra: YYYY-MM-DD
-
-VÍ DỤ NHẬN DIỆN NGÀY THÁNG (rất quan trọng):
-⚠️ QUY TẮC QUAN TRỌNG NHẤT: 
-- CHỈ lấy ĐÚNG ngày cuối cùng được ghi rõ trong tài liệu
-- KHÔNG được tự ý kéo dài usageEndDate ra quá ngày cuối cùng có trong văn bản
-- Nếu thuốc dùng "Ngày 1,2,3" thì endDate = ngày 3, KHÔNG PHẢI ngày 6 hay ngày nào khác
-- ⚠️ MEDICATION SWITCHING: Nếu thấy thuốc A bị NGƯNG và thuốc B BẮT ĐẦU → đây là THAY THUỐC (sequential), KHÔNG phải dùng đồng thời
-
-1. Khoảng ngày rõ ràng:
-   - "Ngày 1-3/1/2024: Paracetamol" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
-   - "01/01/2024 - 05/01/2024: Amoxicillin" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-05"
-   - "Từ 15/01 đến 20/01/2024" → usageStartDate: "2024-01-15", usageEndDate: "2024-01-20"
-
-2. Nhiều ngày liên tiếp (parse ALL dates - endDate = ngày cuối cùng):
-   - "Ngày 1,2,3/1/2024: Ceftriaxone" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03" (KHÔNG PHẢI 2024-01-06!)
-   - "01, 02, 03/01/2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-03"
-   - "Ngày 5, 6, 7, 8/12/2023" → usageStartDate: "2023-12-05", usageEndDate: "2023-12-08"
-
-3. Ngày không liên tiếp (lấy ngày đầu và ngày cuối TRONG DANH SÁCH):
-   - "Ngày 1, 3, 5/1/2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-05" (ngày cuối TRONG danh sách)
-   - "Ngày 10, 15, 20/02/2024" → usageStartDate: "2024-02-10", usageEndDate: "2024-02-20"
-
-4. Format khác:
-   - "Dùng từ 01-01-2024 đến 10-01-2024" → usageStartDate: "2024-01-01", usageEndDate: "2024-01-10"
-   - "Ngày nhập viện 05/01/2024, dùng 7 ngày" → usageStartDate: "2024-01-05", usageEndDate: "2024-01-12"
-
-5. Chỉ có 1 ngày hoặc không có ngày:
-   - "Ngày 15/01/2024: Aspirin" → usageStartDate: "2024-01-15", usageEndDate: "2024-01-15" (cùng ngày nếu chỉ dùng 1 ngày)
-   - "Aspirin 500mg" (không có ngày) → usageStartDate: null, usageEndDate: null
-
-6. ⚠️ MEDICATION SWITCHING (rất quan trọng):
-   - "Ngày 23-27/10: Lovastatin 10mg (tối 1 viên). Ngày 28/10: Lovastatin NGƯNG, Atorvastatin 10mg BẮT ĐẦU"
-     → Lovastatin: startDate: "2024-10-23", endDate: "2024-10-27"
-     → Atorvastatin: startDate: "2024-10-28", endDate: null (hoặc ngày xuất viện)
-   - "Ngày 1-5/1: Thuốc A. Ngày 6/1: Đổi sang Thuốc B"
-     → Thuốc A: startDate: "2024-01-01", endDate: "2024-01-05"
-     → Thuốc B: startDate: "2024-01-06", endDate: null
-   - CHÚ Ý: Nếu trong "Tờ điều trị" có nhiều trang:
-     • Trang 1 (ngày 23/10): Lovastatin x1 viên
-     • Trang 5 (ngày 28/10): KHÔNG CÓ Lovastatin, CHỈ CÓ Atorvastatin
-     → ĐÂY LÀ SWITCHING! Lovastatin endDate = 27/10, Atorvastatin startDate = 28/10
-
-⚠️ SAI LẦM THƯỜNG GẶP CẦN TRÁNH:
-❌ SAI: "Ngày 1,2,3/1/2024" → endDate: "2024-01-06" (sai vì không có ngày 6 trong văn bản)
-✅ ĐÚNG: "Ngày 1,2,3/1/2024" → endDate: "2024-01-03" (ngày cuối cùng được ghi)
-
-❌ SAI: Thuốc A dùng ngày 1-3/1, Thuốc B dùng ngày 4-6/1 → Báo overlap (SAI! Không chồng lấp)
-✅ ĐÚNG: Thuốc A (1-3/1) kết thúc trước khi Thuốc B (4-6/1) bắt đầu → KHÔNG overlap
-
-❌ SAI: Lovastatin (23-27/10) và Atorvastatin (28/10-04/11) → Báo tương tác statin (SAI! Đây là switching)
-✅ ĐÚNG: Lovastatin NGƯNG 27/10, Atorvastatin BẮT ĐẦU 28/10 → Sequential, KHÔNG tương tác
-
-VÍ DỤ ICD-10:
-- "I10: Tăng huyết áp" → diagnosisMain: "Tăng huyết áp", icdCodes.main: "I10"
-- "E11.9: Đái tháo đường type 2" → diagnosisMain: "Đái tháo đường type 2", icdCodes.main: "E11.9"
-
-VÍ DỤ TUỔI VÀ GIỚI TÍNH:
-- "65 tuổi" → patientAge: 65
-- "Nam" hoặc "Male" hoặc "M" → patientGender: "Nam"
-- "Nữ" hoặc "Female" hoặc "F" → patientGender: "Nữ"
-- "BN 72t" → patientAge: 72
-
-VÍ DỤ CREATININE (⚠️ ĐỪNG NHẦM VỚI GIÁ TIỀN):
-- "Creatinine: 1.2 mg/dL" → labResults: { creatinine: 1.2, creatinineUnit: "mg/dL" }
-- "SCr 106 micromol/L" hoặc "Creatinine 106 µmol/L" → labResults: { creatinine: 106, creatinineUnit: "micromol/L" }
-- "Định lượng Creatinin (máu) 91,39 µmol/L" → labResults: { creatinine: 91.39, creatinineUnit: "micromol/L" }
-- "Creatinine máu 0.9" → labResults: { creatinine: 0.9, creatinineUnit: "mg/dL" } (mặc định mg/dL nếu không ghi rõ)
-- ⚠️ TRÁNH: "Creatinine 22,400" trong bảng kê → đó là GIÁ TIỀN, KHÔNG PHẢI KẾT QUẢ XÉT NGHIỆM
-- ⚠️ QUAN TRỌNG: NẾU KHÔNG TÌM THẤY KẾT QUẢ CREATININE THÌ ĐỂ null, KHÔNG ĐOÁN
-
-JSON format (⚠️ NẾU THIẾU THÔNG TIN THÌ ĐỂ null - KHÔNG BỊA):
-{
-  "patientName": "string hoặc null",
-  "patientAge": number hoặc null (⚠️ CHỈ điền khi tìm thấy tuổi rõ ràng),
-  "patientGender": "Nam" hoặc "Nữ" hoặc null (⚠️ CHỈ điền khi tìm thấy giới tính rõ ràng),
-  "patientWeight": number hoặc null,
-  "patientHeight": number hoặc null,
-  "admissionDate": "YYYY-MM-DD hoặc null (ngày nhập viện)",
-  
-  "diagnosisMain": "Chẩn đoán CHÍNH (ví dụ: Viêm phổi)",
-  "diagnosisSecondary": ["Bệnh kèm 1", "Bệnh kèm 2"] hoặc null,
-  "icdCodes": {
-    "main": "mã ICD chính (ví dụ: J18.9)",
-    "secondary": ["mã ICD bệnh kèm 1", "mã ICD bệnh kèm 2"] hoặc null
-  } hoặc null,
-  
-  "diagnosis": "nếu không tách được thì ghi chung ở đây (backward compatibility)",
-  "medicalHistory": "Tiền sử bệnh: bao gồm bệnh mãn tính (tăng huyết áp, đái tháo đường, suy tim, suy thận, bệnh gan, ung thư...), tiền sử phẫu thuật, tiền sử gia đình. Ghi đầy đủ thông tin có trong tài liệu. Nếu không có thì null.",
-  "allergies": "string hoặc null",
-  "labResults": {
-    "creatinine": number hoặc null,
-    "creatinineUnit": "mg/dL" hoặc "micromol/L" hoặc null
-  } hoặc null,
-  
-  "medications": [
-    {
-      "drugName": "tên thuốc chính xác (ví dụ: Seretide Evohaler DC 25/125mcg)",
-      "dose": "liều lượng (ví dụ: 2 nhát, 10mg, 0.4mg) hoặc null",
-      "frequency": "tần suất (ví dụ: Ngày 2 lần mỗi lần 2 nhát 8h-20h, Sáng 1 viên tối 1 viên, Tối 1 viên) hoặc null",
-      "route": "đường dùng - PHẢI CHÍNH XÁC (Uống, Hít, Tiêm tĩnh mạch, Tiêm bắp, Bôi da, Nhỏ mắt, Đặt hậu môn) hoặc null",
-      "usageStartDate": "YYYY-MM-DD hoặc null",
-      "usageEndDate": "YYYY-MM-DD hoặc null"
-    }
-  ] hoặc null
-
-⚠️ LƯU Ý VỀ ĐƯỜNG DÙNG (route):
-- "HÍT" hoặc "EVOHALER" hoặc "INHALER" → route: "Hít"
-- "UỐNG" hoặc "ORAL" hoặc "PO" hoặc "Viên" → route: "Uống"
-- "TIÊM" hoặc "IV" hoặc "IM" → route: "Tiêm tĩnh mạch" hoặc "Tiêm bắp"
-- Ví dụ: "Seretide Evohaler DC 25/125mcg HÍT NGÀY 2 LẦN" → route: "Hít", frequency: "Ngày 2 lần, mỗi lần 2 nhát (8h, 20h)"
-
-⚠️ LƯU Ý VỀ LIỀU LƯỢNG:
-- "Tamsulosin 0,4mg" → dose: "0.4mg" (KHÔNG PHẢI 4mg)
-- "Attapulgit 2,5g + 0,3g + 0,2g" → dose: "2.5g + 0.3g + 0.2g"
-- "2 nhát" → dose: "2 nhát"
 }
 
 CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
