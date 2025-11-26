@@ -160,7 +160,24 @@ Output:
 ⚠️ QUY TẮC QUAN TRỌNG:
 - CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
 - Không có thông tin → null
-- Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary`;
+- Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary
+
+JSON RESPONSE FORMAT:
+{
+  "patientName": "Nguyễn Văn A",
+  "patientAge": 65,
+  "patientGender": "Nam",
+  "patientWeight": 60,
+  "patientHeight": 165,
+  "admissionDate": "2024-10-23",
+  "diagnosisMain": "Đái tháo đường type 2",
+  "diagnosisSecondary": ["Tăng huyết áp", "Rối loạn lipid máu"],
+  "icdCodes": { "main": "E11", "secondary": ["I10", "E78"] },
+  "medicalHistory": "Tăng huyết áp 10 năm, đái tháo đường 5 năm",
+  "allergies": "Không",
+  "labResults": null,
+  "medications": null
+}`;
 
 const CAN_LAM_SANG_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
 
@@ -192,7 +209,27 @@ VÍ DỤ SAI (TRÁNH):
 - patientName, patientAge, patientGender, patientWeight, patientHeight: null
 - admissionDate, diagnosisMain, diagnosisSecondary, icdCodes: null
 - medicalHistory, allergies: null
-- medications: null`;
+- medications: null
+
+JSON RESPONSE FORMAT:
+{
+  "patientName": null,
+  "patientAge": null,
+  "patientGender": null,
+  "patientWeight": null,
+  "patientHeight": null,
+  "admissionDate": null,
+  "diagnosisMain": null,
+  "diagnosisSecondary": null,
+  "icdCodes": null,
+  "medicalHistory": null,
+  "allergies": null,
+  "labResults": {
+    "creatinine": 1.2,
+    "creatinineUnit": "mg/dL"
+  },
+  "medications": null
+}`;
 
 const TO_DIEU_TRI_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
 
@@ -326,11 +363,39 @@ JSON FORMAT:
 4. Liều thay đổi đã đánh dấu variableDosing chưa?
 5. Tự túc đã đánh dấu selfSupplied chưa?
 
-⚠️ CÁC TRƯỜNG SAU ĐỂ null:
+⚠️ CÁC TRƯỜNG SAU ĐỂ null (KHÔNG TRÍCH XUẤT TỪ TỜ ĐIỀU TRỊ):
 - patientName, patientAge, patientGender, patientWeight, patientHeight: null
 - admissionDate, diagnosisMain, diagnosisSecondary, icdCodes: null
 - medicalHistory, allergies: null
-- labResults: null`;
+- labResults: null
+
+JSON RESPONSE FORMAT:
+{
+  "patientName": null,
+  "patientAge": null,
+  "patientGender": null,
+  "patientWeight": null,
+  "patientHeight": null,
+  "admissionDate": null,
+  "diagnosisMain": null,
+  "diagnosisSecondary": null,
+  "icdCodes": null,
+  "medicalHistory": null,
+  "allergies": null,
+  "labResults": null,
+  "medications": [
+    {
+      "drugName": "Aspirin tab DWP 75mg",
+      "dose": "1 viên",
+      "frequency": "Sáng 1 viên",
+      "route": "Uống",
+      "usageStartDate": "2024-10-23",
+      "usageEndDate": "2024-11-04",
+      "variableDosing": false,
+      "selfSupplied": false
+    }
+  ]
+}`;
 
 const clinicalAnalysisSchema = z.object({
   renalAssessment: z.string(),
