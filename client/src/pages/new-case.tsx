@@ -322,8 +322,9 @@ export default function NewCase() {
           setSecondaryDiagnoses(prev => [...prev, ...newSecondaryDiagnoses]);
         }
 
-        // ⚠️ CHỈ TRÍCH XUẤT MEDICATIONS TỪ TỜ ĐIỀU TRỊ (fileGroup === 'prescription')
-        if (fileGroup === 'prescription' && data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
+        // Trích xuất medications từ TẤT CẢ NGUỒN (Bệnh án, Cận lâm sàng, Tờ điều trị)
+        // Cho phép đọc đơn ngoại trú và nội trú linh hoạt
+        if (data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
           setMedications(prev => {
             const seenMedications = new Set<string>(
               prev.map(m => `${m.drugName.trim().toLowerCase()}_${m.usageStartDate || ''}_${m.usageEndDate || ''}`)

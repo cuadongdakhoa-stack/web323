@@ -79,9 +79,9 @@ TRƯỜNG CHÍNH (quan trọng):
 - medicalHistory: Tiền sử bệnh (tăng huyết áp, đái tháo đường, suy tim, suy thận, bệnh gan, ung thư, phẫu thuật...)
 - allergies: Dị ứng thuốc
 
-⚠️ CÁC TRƯỜNG SAU ĐỂ null (KHÔNG TRÍCH XUẤT TỪ BỆNH ÁN):
-- labResults: null (creatinine sẽ được trích xuất từ Cận lâm sàng)
-- medications: null (thuốc sẽ được trích xuất từ Tờ điều trị)
+⚠️ TRÍCH XUẤT LINH HOẠT:
+- labResults: Nếu có creatinine trong bệnh án thì trích xuất, không thì null
+- medications: Nếu có đơn thuốc (ngoại trú/nội trú) trong bệnh án thì trích xuất, không thì null
 
 QUY TẮC TRÍCH XUẤT CHẨN ĐOÁN (CỰC KỲ QUAN TRỌNG):
 
@@ -177,7 +177,9 @@ JSON RESPONSE FORMAT:
   "allergies": "Không",
   "labResults": null,
   "medications": null
-}`;
+}
+
+⚠️ LƯU Ý: Nếu bệnh án có chứa đơn thuốc (đơn ngoại trú hoặc nội trú), hãy trích xuất theo format medications như trong TO_DIEU_TRI_PROMPT.`;
 
 const CAN_LAM_SANG_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
 
@@ -205,11 +207,9 @@ VÍ DỤ SAI (TRÁNH):
 - "Creatinine 22,400" trong bảng kê → ĐÓ LÀ GIÁ TIỀN, KHÔNG PHẢI KẾT QUẢ
 - Không tìm thấy kết quả → labResults: null
 
-⚠️ CÁC TRƯỜNG SAU ĐỂ null:
-- patientName, patientAge, patientGender, patientWeight, patientHeight: null
-- admissionDate, diagnosisMain, diagnosisSecondary, icdCodes: null
-- medicalHistory, allergies: null
-- medications: null
+⚠️ TRÍCH XUẤT LINH HOẠT:
+- Các trường thông tin bệnh nhân: Nếu có thì trích xuất, không thì null
+- medications: Nếu kết quả cận lâm sàng có kèm đơn thuốc thì trích xuất, không thì null
 
 JSON RESPONSE FORMAT:
 {
