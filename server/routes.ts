@@ -27,7 +27,7 @@ import {
   type MedicationWithStatus,
   type DrugFormulary
 } from "@shared/schema";
-import { eq, or, ilike, and, gte, lte, inArray } from "drizzle-orm";
+import { eq, or, ilike, and, gte, lte, inArray, sql } from "drizzle-orm";
 import { 
   analyzePatientCase,
   searchMedicalEvidence,
@@ -135,6 +135,44 @@ function computeMedicationStatus(medication: Medication): MedicationStatus {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
+    // Batch insert medications for a case
+    app.post("/api/medications/batch", requireAuth, async (req, res) => {
+      try {
+        const { caseId, medications } = req.body;
+        console.log("[Medications Batch] Payload:", JSON.stringify(req.body, null, 2));
+        if (!caseId || !Array.isArray(medications) || medications.length === 0) {
+          console.error("[Medications Batch] Thiếu caseId hoặc danh sách thuốc", req.body);
+          return res.status(400).json({ message: "Thiếu caseId hoặc danh sách thuốc", payload: req.body });
+        }
+        // Validate & enrich all medications
+        // Lọc bỏ phần tử undefined hoặc thiếu drugName
+        const validMeds = Array.isArray(medications)
+          ? medications.filter(med => med && med.drugName)
+          : [];
+        if (validMeds.length === 0) {
+          console.error("[Medications Batch] Không có thuốc hợp lệ để lưu", medications);
+          return res.status(400).json({ message: "Không có thuốc hợp lệ để lưu", medications });
+        }
+        try {
+          // Parse và validate từng medication để transform date strings
+          const validatedMeds = validMeds.map(med => {
+            const parsed = insertMedicationSchema.parse({ ...med, caseId });
+            return parsed;
+          });
+          const enrichedMeds = await enrichMedicationsWithActiveIngredients(validatedMeds);
+          // Lưu hàng loạt
+          const savedMeds = await storage.createMedicationsBatch(enrichedMeds);
+          res.status(201).json(savedMeds);
+        } catch (validateError) {
+          console.error("[Medications Batch] Validate error:", validateError);
+          return res.status(400).json({ message: "Lỗi validate khi lưu thuốc", error: validateError, medications: validMeds });
+        }
+      } catch (error) {
+        console.error("[Medications Batch] Unknown error:", error);
+        const errorMessage = error instanceof Error ? error.message : "Unknown error";
+        res.status(400).json({ message: errorMessage, error });
+      }
+    });
   const require = createRequire(import.meta.url);
   
   const uploadsDir = path.join(__dirname, '..', 'uploads');
@@ -232,26 +270,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (!cleanName) return med;
 
         // Search in database (fuzzy match with ILIKE)
-        const foundDrugs = await db
-          .select()
-          .from(drugFormulary)
-          .where(
-            or(
-              ilike(drugFormulary.tradeName, `%${cleanName}%`),
-              ilike(drugFormulary.tradeName, cleanName)
+        try {
+          const foundDrugs = await db
+            .select()
+            .from(drugFormulary)
+            .where(
+              or(
+                ilike(drugFormulary.tradeName, `%${cleanName}%`),
+                ilike(drugFormulary.tradeName, cleanName)
+              )
             )
-          )
-          .limit(1);
+            .limit(1);
 
-        if (foundDrugs.length > 0) {
-          console.log(`[Enrichment] Found active ingredient for "${drugName}": ${foundDrugs[0].activeIngredient}`);
-          return {
-            ...med,
-            activeIngredient: foundDrugs[0].activeIngredient,
-            // Also update strength and unit if missing
-            strength: med.strength || foundDrugs[0].strength,
-            unit: med.unit || foundDrugs[0].unit,
-          };
+          if (foundDrugs.length > 0) {
+            console.log(`[Enrichment] Found active ingredient for "${drugName}": ${foundDrugs[0].activeIngredient}`);
+            return {
+              ...med,
+              activeIngredient: foundDrugs[0].activeIngredient,
+              // Also update strength and unit if missing
+              strength: med.strength || foundDrugs[0].strength,
+              unit: med.unit || foundDrugs[0].unit,
+            };
+          }
+        } catch (dbError: any) {
+          // If the database schema is out-of-sync (missing columns), attempt a safer raw query
+          console.error(`[Enrichment DB Error] Primary lookup failed for "${drugName}":`, dbError?.message || dbError);
+          if (dbError && (dbError.code === '42703' || (dbError.message && dbError.message.includes('does not exist')))) {
+            try {
+              const raw = await db.execute(sql`
+                SELECT trade_name, active_ingredient, strength, unit
+                FROM drug_formulary
+                WHERE trade_name ILIKE ${`%${cleanName}%`}
+                LIMIT 1
+              `);
+              const rows = raw?.rows || [];
+              const row = rows[0] as any;
+              if (row) {
+                console.log(`[Enrichment Fallback] Found active ingredient for "${drugName}": ${row.active_ingredient}`);
+                return {
+                  ...med,
+                  activeIngredient: row.active_ingredient,
+                  strength: med.strength || row.strength,
+                  unit: med.unit || row.unit,
+                };
+              }
+            } catch (fallbackErr) {
+              console.error(`[Enrichment Fallback Error]`, fallbackErr);
+            }
+          }
+          // If fallback not possible or failed, continue without enrichment
+          return med;
         }
 
         return med;
@@ -314,9 +382,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Không có file được tải lên" });
       }
 
-      // NEW: Get fileGroup from request body (admin, lab, or prescription)
+      // Get fileGroup and caseType from request body
       const fileGroup = req.body.fileGroup as string | undefined;
-      console.log(`[Extract] Processing ${files.length} files with fileGroup: ${fileGroup || 'none (comprehensive)'}`);
+      const caseType = req.body.caseType as string | undefined; // "inpatient" or "outpatient"
+      console.log(`[Extract] Processing ${files.length} files with fileGroup: ${fileGroup || 'none'}, caseType: ${caseType || 'none'}`);
 
       let combinedTextContent = "";
 
@@ -386,8 +455,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Nội dung file quá ngắn, không đủ thông tin để trích xuất" });
       }
 
-      // Send combined text to GPT-4 AI with specialized prompt based on fileGroup
-      const extractedData = await extractDataFromDocument(combinedTextContent, "pdf", fileGroup);
+      // Send combined text to GPT-4 AI with specialized prompt based on fileGroup and caseType
+      const extractedData = await extractDataFromDocument(combinedTextContent, "pdf", fileGroup, caseType);
       
       if (!extractedData || typeof extractedData !== 'object') {
         return res.status(500).json({ message: "AI không trả về dữ liệu hợp lệ" });

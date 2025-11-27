@@ -6,26 +6,27 @@ Hệ thống hỗ trợ dược sĩ lâm sàng trong việc phân tích case b�
 
 ### Local Development
 ```bash
+# Install dependencies
 npm install
+
+# Setup database
 npm run db:push
 npm run db:seed
+
+# Start development server
 npm run dev
 ```
-Chi tiết: [README-LOCAL.md](./README-LOCAL.md)
 
 ### Deployment
 ```bash
-git push origin main
-# Deploy trên Railway.app
+# Build for production
+npm run build
+
+# Start production server
+npm run start
 ```
-Chi tiết: [RAILWAY-CHECKLIST.md](./RAILWAY-CHECKLIST.md)
 
-## 📚 Documentation
-
-- **[README-LOCAL.md](./README-LOCAL.md)** - Hướng dẫn chạy local
-- **[RAILWAY-CHECKLIST.md](./RAILWAY-CHECKLIST.md)** - Deploy lên Railway
-- **[DEPLOY.md](./DEPLOY.md)** - Tổng quan deployment
-- **[DEPLOYMENT-READY.md](./DEPLOYMENT-READY.md)** - Technical summary
+Deploy on Railway.app or any Node.js hosting platform.
 
 ## ✨ Features
 

@@ -3,6 +3,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
+import { pool, testConnection } from "./db";
 
 const app = express();
 app.set('trust proxy', 1);
@@ -52,6 +53,33 @@ app.use((req, res, next) => {
   next();
 });
 
+// Health check endpoint - must be before other routes
+app.get('/health', async (_req, res) => {
+  try {
+    const dbHealthy = await testConnection(1, 0);
+    if (dbHealthy) {
+      res.status(200).json({ 
+        status: 'healthy', 
+        database: 'connected',
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      res.status(503).json({ 
+        status: 'unhealthy', 
+        database: 'disconnected',
+        timestamp: new Date().toISOString()
+      });
+    }
+  } catch (error: any) {
+    res.status(503).json({ 
+      status: 'unhealthy', 
+      database: 'error',
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 (async () => {
   const server = await registerRoutes(app);
 
@@ -85,4 +113,38 @@ app.use((req, res, next) => {
   server.listen(port, host, () => {
     log(`serving on ${host}:${port}`);
   });
+
+  // Graceful shutdown for the HTTP server
+  let isShuttingDown = false;
+  
+  async function shutdown(signal: string) {
+    if (isShuttingDown) return;
+    isShuttingDown = true;
+    
+    log(`\n[Server] Received ${signal}, starting graceful shutdown...`);
+    
+    // Stop accepting new connections
+    server.close(async (err) => {
+      if (err) {
+        console.error('[Server] Error during server shutdown:', err);
+      } else {
+        log('[Server] HTTP server closed');
+      }
+      
+      // Database pool will be closed by db.ts handlers
+      // Give it a moment to finish
+      setTimeout(() => {
+        process.exit(err ? 1 : 0);
+      }, 1000);
+    });
+
+    // Force close after 10 seconds
+    setTimeout(() => {
+      console.error('[Server] Forced shutdown after timeout');
+      process.exit(1);
+    }, 10000);
+  }
+
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT', () => shutdown('SIGINT'));
 })();

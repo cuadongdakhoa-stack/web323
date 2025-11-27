@@ -23,24 +23,45 @@ export interface AuthMeResponse {
 export const cases = pgTable("cases", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id),
+  caseType: text("case_type").notNull().default("inpatient"), // 'inpatient' | 'outpatient'
+  
+  // Patient Information
   patientName: text("patient_name").notNull(),
   patientAge: integer("patient_age").notNull(),
   patientGender: text("patient_gender").notNull(),
   patientWeight: real("patient_weight"),
   patientHeight: real("patient_height"),
-  admissionDate: timestamp("admission_date").notNull(),
+  patientPhone: text("patient_phone"),
+  patientAddress: text("patient_address"),
+  
+  // Case Details
+  admissionDate: timestamp("admission_date").notNull(), // For inpatient: admission, for outpatient: visit date
+  chiefComplaint: text("chief_complaint"), // Main symptom/reason for visit
+  admissionReason: text("admission_reason"), // For inpatient only
+  department: text("department"), // Department/clinic
+  prescribingDoctor: text("prescribing_doctor"), // Doctor name
+  
+  // Clinical Information
   diagnosis: text("diagnosis").notNull(),
   diagnosisMain: text("diagnosis_main"),
   diagnosisSecondary: text("diagnosis_secondary").array(),
   icdCodes: jsonb("icd_codes"),
   medicalHistory: text("medical_history"),
   allergies: text("allergies"),
-  labResults: jsonb("lab_results"),
+  clinicalStatus: text("clinical_status"), // stable, critical, moderate
+  
+  // Lab & Assessment
+  labResults: jsonb("lab_results"), // Legacy field (kept for backward compatibility)
+  labs: jsonb("labs"), // New: array of lab tests [{ test_group, test_name, result_value, unit, reference_range, abnormal_flag, collected_at }]
   creatinine: real("creatinine"),
   creatinineUnit: text("creatinine_unit").default("mg/dL"),
   egfr: real("egfr"),
   egfrCategory: text("egfr_category"),
   renalFunction: text("renal_function"),
+  
+  // Metadata
+  priorityLevel: text("priority_level"), // urgent, routine, follow-up
+  referralSource: text("referral_source"), // emergency, outpatient, transfer, etc.
   uploadedFileName: text("uploaded_file_name"),
   uploadedFileData: text("uploaded_file_data"),
   status: text("status").notNull().default("draft"),
@@ -61,15 +82,29 @@ export const medications = pgTable("medications", {
   caseId: varchar("case_id").notNull().references(() => cases.id, { onDelete: "cascade" }),
   drugName: text("drug_name").notNull(),
   indication: text("indication"),
+  
+  // Dose information
   prescribedDose: text("prescribed_dose").notNull(),
   prescribedFrequency: text("prescribed_frequency").notNull(),
   prescribedRoute: text("prescribed_route").notNull(),
+  form: text("form"), // viên, gói, ống, bình xịt, dung dịch
+  dosePerAdmin: real("dose_per_admin"), // số lượng mỗi lần (1, 2, 0.5)
+  frequencyPerDay: integer("frequency_per_day"), // số lần/ngày (1, 2, 3, 4)
+  adminTimes: jsonb("admin_times"), // ["08:00", "14:00", "20:00"] for inpatient
+  
+  // Adjustment
   adjustedDose: text("adjusted_dose"),
   adjustedFrequency: text("adjusted_frequency"),
   adjustedRoute: text("adjusted_route"),
   adjustmentReason: text("adjustment_reason"),
+  
+  // Timeline
   usageStartDate: timestamp("usage_start_date"),
   usageEndDate: timestamp("usage_end_date"),
+  
+  // Status & metadata
+  medicationStatus: text("medication_status"), // ACTIVE, STOPPED, CHANGED
+  orderSheetNumber: text("order_sheet_number"), // Số tờ điều trị (inpatient)
   variableDosing: boolean("variable_dosing").default(false),
   selfSupplied: boolean("self_supplied").default(false),
   orderIndex: integer("order_index").notNull().default(0),

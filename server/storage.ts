@@ -14,6 +14,26 @@ import {
 import { eq, desc, and, or, sql, ilike } from "drizzle-orm";
 import bcrypt from "bcrypt";
 
+// Helper function to handle database errors
+function handleDbError(error: any, operation: string): never {
+  console.error(`[Storage] Error in ${operation}:`, error);
+  
+  // More specific error messages based on error type
+  if (error.code === '23505') {
+    throw new Error(`Duplicate entry: ${error.detail || 'Record already exists'}`);
+  } else if (error.code === '23503') {
+    throw new Error(`Foreign key constraint violation: ${error.detail || 'Referenced record not found'}`);
+  } else if (error.code === '23502') {
+    throw new Error(`Missing required field: ${error.column || 'A required field is missing'}`);
+  } else if (error.code === '42703') {
+    throw new Error(`Database schema error: Column does not exist. Please run migrations.`);
+  } else if (error.message?.includes('connection') || error.message?.includes('timeout')) {
+    throw new Error(`Database connection error: ${error.message}`);
+  }
+  
+  throw new Error(`Database error in ${operation}: ${error.message || 'Unknown error'}`);
+}
+
 export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
@@ -29,6 +49,7 @@ export interface IStorage {
   
   getMedicationsByCase(caseId: string): Promise<Medication[]>;
   createMedication(medication: InsertMedication): Promise<Medication>;
+  createMedicationsBatch(medications: InsertMedication[]): Promise<Medication[]>;
   updateMedication(id: string, medication: Partial<InsertMedication>): Promise<Medication | undefined>;
   deleteMedication(id: string): Promise<void>;
   
@@ -75,6 +96,11 @@ export interface IStorage {
 }
 
 export class PostgresStorage implements IStorage {
+    async createMedicationsBatch(meds: InsertMedication[]): Promise<Medication[]> {
+      if (!Array.isArray(meds) || meds.length === 0) return [];
+      const result = await db.insert(medications).values(meds).returning();
+      return result;
+    }
   private systemStatsCache: {
     data: {
       totalCases: number;
@@ -87,98 +113,166 @@ export class PostgresStorage implements IStorage {
   private readonly STATS_CACHE_TTL = 5 * 60 * 1000;
 
   async getUser(id: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
-    return result[0];
+    try {
+      const result = await db.select().from(users).where(eq(users.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'getUser');
+    }
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
-    return result[0];
+    try {
+      const result = await db.select().from(users).where(eq(users.username, username)).limit(1);
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'getUserByUsername');
+    }
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const hashedPassword = await bcrypt.hash(insertUser.password, 10);
-    const result = await db.insert(users).values({
-      ...insertUser,
-      password: hashedPassword,
-    }).returning();
-    return result[0];
+    try {
+      const hashedPassword = await bcrypt.hash(insertUser.password, 10);
+      const result = await db.insert(users).values({
+        ...insertUser,
+        password: hashedPassword,
+      }).returning();
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'createUser');
+    }
   }
 
   async getAllUsers(): Promise<User[]> {
-    return db.select().from(users);
+    try {
+      return db.select().from(users);
+    } catch (error) {
+      handleDbError(error, 'getAllUsers');
+    }
   }
 
   async getCase(id: string): Promise<Case | undefined> {
-    const result = await db.select().from(cases).where(eq(cases.id, id)).limit(1);
-    return result[0];
+    try {
+      const result = await db.select().from(cases).where(eq(cases.id, id)).limit(1);
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'getCase');
+    }
   }
 
   async getCasesByUser(userId: string): Promise<Case[]> {
-    return db.select().from(cases).where(eq(cases.userId, userId)).orderBy(desc(cases.createdAt));
+    try {
+      return db.select().from(cases).where(eq(cases.userId, userId)).orderBy(desc(cases.createdAt));
+    } catch (error) {
+      handleDbError(error, 'getCasesByUser');
+    }
   }
 
   async getAllCases(): Promise<Case[]> {
-    return db.select().from(cases).orderBy(desc(cases.createdAt));
+    try {
+      return db.select().from(cases).orderBy(desc(cases.createdAt));
+    } catch (error) {
+      handleDbError(error, 'getAllCases');
+    }
   }
 
   async createCase(caseData: InsertCase): Promise<Case> {
-    const result = await db.insert(cases).values(caseData).returning();
-    return result[0];
+    try {
+      const result = await db.insert(cases).values(caseData).returning();
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'createCase');
+    }
   }
 
   async updateCase(id: string, caseData: Partial<InsertCase>): Promise<Case | undefined> {
-    const result = await db.update(cases)
-      .set({ ...caseData, updatedAt: new Date() })
-      .where(eq(cases.id, id))
-      .returning();
-    return result[0];
+    try {
+      const result = await db.update(cases)
+        .set({ ...caseData, updatedAt: new Date() })
+        .where(eq(cases.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'updateCase');
+    }
   }
 
   async deleteCase(id: string): Promise<void> {
-    await db.delete(cases).where(eq(cases.id, id));
+    try {
+      await db.delete(cases).where(eq(cases.id, id));
+    } catch (error) {
+      handleDbError(error, 'deleteCase');
+    }
   }
 
   async getMedicationsByCase(caseId: string): Promise<Medication[]> {
-    return db.select().from(medications)
-      .where(eq(medications.caseId, caseId))
-      .orderBy(medications.orderIndex);
+    try {
+      return db.select().from(medications)
+        .where(eq(medications.caseId, caseId))
+        .orderBy(medications.orderIndex);
+    } catch (error) {
+      handleDbError(error, 'getMedicationsByCase');
+    }
   }
 
   async createMedication(medication: InsertMedication): Promise<Medication> {
-    const result = await db.insert(medications).values(medication).returning();
-    return result[0];
+    try {
+      const result = await db.insert(medications).values(medication).returning();
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'createMedication');
+    }
   }
 
   async updateMedication(id: string, medication: Partial<InsertMedication>): Promise<Medication | undefined> {
-    const result = await db.update(medications)
-      .set(medication)
-      .where(eq(medications.id, id))
-      .returning();
-    return result[0];
+    try {
+      const result = await db.update(medications)
+        .set(medication)
+        .where(eq(medications.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'updateMedication');
+    }
   }
 
   async deleteMedication(id: string): Promise<void> {
-    await db.delete(medications).where(eq(medications.id, id));
+    try {
+      await db.delete(medications).where(eq(medications.id, id));
+    } catch (error) {
+      handleDbError(error, 'deleteMedication');
+    }
   }
 
   async getAnalysesByCase(caseId: string): Promise<Analysis[]> {
-    return db.select().from(analyses)
-      .where(eq(analyses.caseId, caseId))
-      .orderBy(desc(analyses.createdAt));
+    try {
+      return db.select().from(analyses)
+        .where(eq(analyses.caseId, caseId))
+        .orderBy(desc(analyses.createdAt));
+    } catch (error) {
+      handleDbError(error, 'getAnalysesByCase');
+    }
   }
 
   async createAnalysis(analysis: InsertAnalysis): Promise<Analysis> {
-    const result = await db.insert(analyses).values(analysis).returning();
-    return result[0];
+    try {
+      const result = await db.insert(analyses).values(analysis).returning();
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'createAnalysis');
+    }
   }
 
   async updateAnalysis(id: string, analysis: Partial<InsertAnalysis>): Promise<Analysis | undefined> {
-    const result = await db.update(analyses)
-      .set(analysis)
-      .where(eq(analyses.id, id))
-      .returning();
-    return result[0];
+    try {
+      const result = await db.update(analyses)
+        .set(analysis)
+        .where(eq(analyses.id, id))
+        .returning();
+      return result[0];
+    } catch (error) {
+      handleDbError(error, 'updateAnalysis');
+    }
   }
 
   async getEvidenceByCase(caseId: string): Promise<Evidence[]> {
@@ -341,15 +435,16 @@ export class PostgresStorage implements IStorage {
   }
 
   async getSystemStatistics() {
-    const now = Date.now();
-    if (this.systemStatsCache.data && (now - this.systemStatsCache.timestamp < this.STATS_CACHE_TTL)) {
-      return this.systemStatsCache.data;
-    }
+    try {
+      const now = Date.now();
+      if (this.systemStatsCache.data && (now - this.systemStatsCache.timestamp < this.STATS_CACHE_TTL)) {
+        return this.systemStatsCache.data;
+      }
 
-    const totalCasesResult = await db.select({
-      count: sql<number>`count(*)::int`
-    }).from(cases);
-    const totalCases = totalCasesResult[0]?.count || 0;
+      const totalCasesResult = await db.select({
+        count: sql<number>`count(*)::int`
+      }).from(cases);
+      const totalCases = totalCasesResult[0]?.count || 0;
 
     const totalPatientsResult = await db.select({
       count: sql<number>`count(distinct lower(${cases.patientName}))::int`
@@ -393,6 +488,9 @@ export class PostgresStorage implements IStorage {
     this.systemStatsCache.timestamp = now;
 
     return stats;
+    } catch (error) {
+      handleDbError(error, 'getSystemStatistics');
+    }
   }
 }
 

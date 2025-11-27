@@ -6,6 +6,7 @@ const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
 if (!OPENROUTER_API_KEY) {
   console.error("⚠️  WARNING: OPENROUTER_API_KEY is not set. AI features will not work.");
+  console.error("⚠️  Available env vars:", Object.keys(process.env).filter(k => k.includes('KEY') || k.includes('API')).join(', '));
 }
 
 const extractedDataSchema = z.object({
@@ -64,18 +65,22 @@ const evidenceItemSchema = z.object({
 
 const BENH_AN_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
 
-Trích xuất từ BỆNH ÁN / HỒ SƠ VÀO VIỆN. CHỈ TRÍCH XUẤT CÁC TRƯỜNG SAU:
+Trích xuất từ BỆNH ÁN / HỒ SƠ VÀO VIỆN (INPATIENT - NỘI TRÚ). CHỈ TRÍCH XUẤT CÁC TRƯỜNG SAU:
 
-TRƯỜNG CHÍNH (quan trọng):
+THÔNG TIN BỆNH NHÂN:
 - patientName: Họ tên bệnh nhân
 - patientAge: Tuổi (số)
 - patientGender: Giới tính ("Nam" hoặc "Nữ")
 - patientWeight: Cân nặng (kg)
 - patientHeight: Chiều cao (cm)
+
+THÔNG TIN NHẬP VIỆN:
 - admissionDate: Ngày nhập viện (YYYY-MM-DD)
-- diagnosisMain: Chẩn đoán CHÍNH
-- diagnosisSecondary: Mảng các bệnh kèm theo
-- icdCodes: { main: "mã ICD chính", secondary: ["mã ICD bệnh kèm"] }
+
+CHẨN ĐOÁN:
+- diagnosisMain: Chẩn đoán CHÍNH (mục 15)
+- diagnosisSecondary: Mảng các bệnh kèm theo (mục 17)
+- icdCodes: { main: "mã ICD chính (mục 16)", secondary: ["mã ICD bệnh kèm (mục 18)"] }
 - medicalHistory: Tiền sử bệnh (tăng huyết áp, đái tháo đường, suy tim, suy thận, bệnh gan, ung thư, phẫu thuật...)
 - allergies: Dị ứng thuốc
 
@@ -124,45 +129,7 @@ QUY TẮC TRÍCH XUẤT CHẨN ĐOÁN (CỰC KỲ QUAN TRỌNG):
    - Loại bỏ trùng lặp (sau khi chuẩn hóa)
    - Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary
 
-VÍ DỤ:
-Input: "(15) Bệnh đái tháo đường không phụ thuộc insuline (16) E11 (17) Rối loạn chuyển hóa lipoprotein;Viêm giáp;Xơ vữa động mạch (18) E78;K21;M10"
-Output:
-{
-  "diagnosisMain": "Bệnh đái tháo đường không phụ thuộc insuline",
-  "icdCodes": { "main": "E11", "secondary": ["E78", "K21", "M10"] },
-  "diagnosisSecondary": ["Rối loạn chuyển hóa lipoprotein", "Viêm giáp", "Xơ vữa động mạch"]
-}
-
-VÍ DỤ KHÔNG CÓ MÃ ICD:
-Input: "(15) Thoái hóa khớp gối (16) (không ghi) (17) Tăng huyết áp (18) (không ghi)"
-Output:
-{
-  "diagnosisMain": "Thoái hóa khớp gối",
-  "icdCodes": { "main": "M17", "secondary": ["I10"] },
-  "diagnosisSecondary": ["Tăng huyết áp"]
-}
-
-VÍ DỤ BỆNH KHÔNG CÓ TRONG BẢNG:
-Input: "(15) Bệnh lạ không rõ (16) (không ghi)"
-Output:
-{
-  "diagnosisMain": "Bệnh lạ không rõ",
-  "icdCodes": { "main": "", "secondary": [] },
-  "diagnosisSecondary": []
-}
-
-⚠️ SAI LẦM THƯỜNG GẶP (TRÁNH):
-❌ Tự suy luận bệnh từ triệu chứng hoặc thuốc
-❌ Giữ lại bệnh trùng lặp (không de-duplicate)
-❌ Gán M10 (gout) cho thoái hóa khớp gối (phải là M17)
-❌ Tự đoán mã ICD khi không có trong tài liệu và không có trong bảng
-
-⚠️ QUY TẮC QUAN TRỌNG:
-- CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
-- Không có thông tin → null
-- Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary
-
-JSON RESPONSE FORMAT:
+VÍ DỤ RESPONSE:
 {
   "patientName": "Nguyễn Văn A",
   "patientAge": 65,
@@ -179,37 +146,216 @@ JSON RESPONSE FORMAT:
   "medications": null
 }
 
-⚠️ LƯU Ý: Nếu bệnh án có chứa đơn thuốc (đơn ngoại trú hoặc nội trú), hãy trích xuất theo format medications như trong TO_DIEU_TRI_PROMPT.`;
+⚠️ QUY TẮC QUAN TRỌNG:
+- CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
+- Không có thông tin → null
+- clinicalStatus chỉ chọn: "stable", "moderate", hoặc "critical"
+- priorityLevel chỉ chọn: "urgent", "routine", hoặc "follow-up"
+- referralSource chỉ chọn: "emergency", "outpatient", "transfer", hoặc "self"`;
+
+const OUTPATIENT_PRESCRIPTION_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
+
+Trích xuất từ ĐƠN THUỐC NGOẠI TRÚ (OUTPATIENT PRESCRIPTION). ĐƠN NGOẠI TRÚ RẤT QUAN TRỌNG VỀ:
+
+THÔNG TIN BỆNH NHÂN (bắt buộc cho đơn ngoại trú):
+- patientName: Họ tên bệnh nhân
+- patientAge: Tuổi (số)
+- patientGender: Giới tính ("Nam" hoặc "Nữ")
+- patientWeight: Cân nặng (kg) - nếu có
+- patientHeight: Chiều cao (cm) - nếu có
+
+THÔNG TIN KHÁM BỆNH:
+- admissionDate: Ngày khám/Ngày kê đơn (YYYY-MM-DD) - thường ở header đơn
+
+CHẨN ĐOÁN:
+- diagnosisMain: Chẩn đoán chính (từ mục "Chẩn đoán" hoặc "Diagnosis")
+- diagnosisSecondary: Bệnh kèm theo (nếu có)
+- icdCodes: Mã ICD (nếu có ghi trong đơn)
+- medicalHistory: Tiền sử bệnh (nếu có ghi)
+- allergies: Dị ứng thuốc (nếu có ghi)
+
+THUỐC (medications):
+- Trích xuất TẤT CẢ thuốc trong đơn
+- Format: [{ drugName, dose, frequency, route, usageStartDate, usageEndDate }]
+- usageStartDate = usageEndDate = ngày khám (đơn ngoại trú chỉ 1 ngày)
+- Số ngày dùng: thường ghi "x 10 ngày", "x 30 ngày" → cộng vào ngày khám để có usageEndDate
+
+VÍ DỤ ĐƠN NGOẠI TRÚ:
+Header:
+- Ngày: 25/11/2024
+- BN: Trần Thị C, 45 tuổi, Nữ
+- Lý do khám: Ho, sốt 3 ngày
+
+Body:
+1. Amoxicillin 500mg - 1v x 2 lần/ngày x 7 ngày - Uống
+2. Paracetamol 500mg - 1v x 3 lần/ngày x 5 ngày - Uống
+
+Footer:
+Bác sĩ: BS. Lê Văn D
+[Chữ ký]
+
+OUTPUT JSON:
+{
+  "patientName": "Trần Thị C",
+  "patientAge": 45,
+  "patientGender": "Nữ",
+  "admissionDate": "2024-11-25",
+  "diagnosisMain": null,
+  "diagnosisSecondary": null,
+  "icdCodes": null,
+  "medicalHistory": null,
+  "allergies": null,
+  "labResults": null,
+  "medications": [
+    {
+      "drugName": "Amoxicillin 500mg",
+      "dose": "1 viên",
+      "frequency": "2 lần/ngày",
+      "route": "Uống",
+      "form": "viên",
+      "dosePerAdmin": 1,
+      "frequencyPerDay": 2,
+      "usageStartDate": "2024-11-25",
+      "usageEndDate": "2024-12-01"
+    },
+    {
+      "drugName": "Paracetamol 500mg",
+      "dose": "1 viên",
+      "frequency": "3 lần/ngày",
+      "route": "Uống",
+      "form": "viên",
+      "dosePerAdmin": 1,
+      "frequencyPerDay": 3,
+      "usageStartDate": "2024-11-25",
+      "usageEndDate": "2024-11-29"
+    }
+  ]
+}
+
+⚠️ MEDICATIONS SCHEMA CHI TIẾT:
+- drugName: Tên thuốc đầy đủ (bao gồm hàm lượng)
+- dose: Liều dùng nguyên văn ("1 viên", "2 viên", "1 gói")
+- frequency: Tần suất nguyên văn ("2 lần/ngày", "sáng tối")
+- route: Đường dùng ("Uống", "Tiêm", "Bôi", "Nhỏ mắt", "Ngậm")
+- form: Dạng thuốc ("viên", "gói", "ống", "lọ", "bình xịt", "dung dịch", "viên nang") ⭐ MỚI
+- dosePerAdmin: Số lượng mỗi lần (parse từ dose: "1 viên" → 1, "2 viên" → 2) ⭐ MỚI
+- frequencyPerDay: Số lần/ngày (parse từ frequency: "2 lần/ngày" → 2, "sáng chiều tối" → 3) ⭐ MỚI
+- usageStartDate: Ngày bắt đầu dùng
+- usageEndDate: Ngày kết thúc = startDate + số ngày dùng
+
+⚠️ QUY TẮC QUAN TRỌNG:
+- form, dosePerAdmin, frequencyPerDay: parse từ dose và frequency
+- Nếu không parse được → null (KHÔNG đoán)
+- usageEndDate = admissionDate + số ngày dùng`;
 
 const CAN_LAM_SANG_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
 
-Trích xuất từ KẾT QUẢ CẬN LÂM SÀNG. CHỈ TRÍCH XUẤT CREATININE:
+Trích xuất từ KẾT QUẢ CẬN LÂM SÀNG (Xét nghiệm máu, Hóa sinh, Nước tiểu, Vi sinh).
 
-TRƯỜNG CHÍNH:
-- labResults: {
-    creatinine: số (ví dụ: 1.2 hoặc 91.39),
-    creatinineUnit: "mg/dL" hoặc "micromol/L"
+TRÍCH XUẤT TOÀN BỘ XÉT NGHIỆM:
+
+⚠️ SCHEMA MỚI - labs[] array (thay vì chỉ creatinine):
+
+labs: [
+  {
+    "testGroup": "Hematology" | "Biochemistry" | "Urinalysis" | "Microbiology" | "Other",
+    "testName": "Tên xét nghiệm (WBC, Hb, Creatinine, AST, ALT, Glucose, ...)",
+    "resultValue": "Giá trị (số hoặc text)",
+    "unit": "Đơn vị (g/L, 10^9/L, mg/dL, U/L, ...)",
+    "referenceRange": "Khoảng tham chiếu nếu có (VD: 3.5-10.0)",
+    "abnormalFlag": "HIGH" | "LOW" | "NORMAL" | null,
+    "collectedAt": "Ngày/giờ lấy mẫu nếu có (YYYY-MM-DD HH:mm)"
   }
+]
 
-⚠️ HƯỚNG DẪN TRÍCH XUẤT CREATININE:
-1. Tìm "Creatinine", "Creatinin", "SCr", "Định lượng Creatinin (máu)"
-2. Lấy GIÁ TRỊ SỐ (bỏ qua giá tiền!)
-3. Xác định đơn vị:
-   - mg/dL: thường từ 0.5 - 3.0
-   - micromol/L (µmol/L, μmol/L, umol/L): thường từ 40 - 300
+⚠️ PHÂN LOẠI testGroup:
+- "Hematology": WBC, RBC, Hb, Hct, PLT, MCV, MCH, MCHC, Bạch cầu đa nhân, Lympho...
+- "Biochemistry": Glucose, Creatinine, Urea, AST, ALT, Bilirubin, Protein, Albumin, Cholesterol, Triglyceride, HDL, LDL...
+- "Urinalysis": pH nước tiểu, Protein niệu, Glucose niệu, Hồng cầu, Bạch cầu, Trụ...
+- "Microbiology": Vi khuẩn, Kháng sinh đồ
+- "Other": Các xét nghiệm khác
 
-VÍ DỤ ĐÚNG:
-- "Creatinine: 1.2 mg/dL" → { creatinine: 1.2, creatinineUnit: "mg/dL" }
-- "Định lượng Creatinin (máu) 91,39 µmol/L" → { creatinine: 91.39, creatinineUnit: "micromol/L" }
-- "SCr 106 micromol/L" → { creatinine: 106, creatinineUnit: "micromol/L" }
+⚠️ HƯỚNG DẪN abnormalFlag:
+- So sánh resultValue với referenceRange
+- Nếu cao hơn → "HIGH"
+- Nếu thấp hơn → "LOW"
+- Trong khoảng bình thường → "NORMAL"
+- Không có reference range hoặc không rõ → null
 
-VÍ DỤ SAI (TRÁNH):
-- "Creatinine 22,400" trong bảng kê → ĐÓ LÀ GIÁ TIỀN, KHÔNG PHẢI KẾT QUẢ
-- Không tìm thấy kết quả → labResults: null
+VÍ DỤ:
 
-⚠️ TRÍCH XUẤT LINH HOẠT:
-- Các trường thông tin bệnh nhân: Nếu có thì trích xuất, không thì null
-- medications: Nếu kết quả cận lâm sàng có kèm đơn thuốc thì trích xuất, không thì null
+JSON Output:
+{
+  "labs": [
+    {
+      "testGroup": "Hematology",
+      "testName": "WBC",
+      "resultValue": "8.5",
+      "unit": "10^9/L",
+      "referenceRange": "4.0-10.0",
+      "abnormalFlag": "NORMAL",
+      "collectedAt": null
+    },
+    {
+      "testGroup": "Hematology",
+      "testName": "Hb",
+      "resultValue": "120",
+      "unit": "g/L",
+      "referenceRange": "130-170",
+      "abnormalFlag": "LOW",
+      "collectedAt": null
+    },
+    {
+      "testGroup": "Hematology",
+      "testName": "PLT",
+      "resultValue": "250",
+      "unit": "10^9/L",
+      "referenceRange": "150-400",
+      "abnormalFlag": "NORMAL",
+      "collectedAt": null
+    },
+    {
+      "testGroup": "Biochemistry",
+      "testName": "Glucose",
+      "resultValue": "5.8",
+      "unit": "mmol/L",
+      "referenceRange": "3.9-6.1",
+      "abnormalFlag": "NORMAL",
+      "collectedAt": null
+    },
+    {
+      "testGroup": "Biochemistry",
+      "testName": "Creatinine",
+      "resultValue": "110",
+      "unit": "µmol/L",
+      "referenceRange": "60-110",
+      "abnormalFlag": "NORMAL",
+      "collectedAt": null
+    },
+    {
+      "testGroup": "Biochemistry",
+      "testName": "AST",
+      "resultValue": "45",
+      "unit": "U/L",
+      "referenceRange": "10-40",
+      "abnormalFlag": "HIGH",
+      "collectedAt": null
+    }
+  ],
+  "labResults": {
+    "creatinine": 110,
+    "creatinineUnit": "micromol/L"
+  }
+}
+
+⚠️ BACKWARD COMPATIBILITY:
+- Vẫn phải điền labResults (legacy) với creatinine nếu tìm thấy
+- Đồng thời điền labs[] (new) với TẤT CẢ xét nghiệm
+
+⚠️ TRÁNH SAI LẦM:
+- Không nhầm GIÁ TIỀN trong bảng kê với KẾT QUẢ xét nghiệm
+- resultValue là GIÁ TRỊ, không phải giá tiền
+- Nếu không có kết quả xét nghiệm → labs: []
 
 JSON RESPONSE FORMAT:
 {
@@ -224,10 +370,8 @@ JSON RESPONSE FORMAT:
   "icdCodes": null,
   "medicalHistory": null,
   "allergies": null,
-  "labResults": {
-    "creatinine": 1.2,
-    "creatinineUnit": "mg/dL"
-  },
+  "labs": [],
+  "labResults": null,
   "medications": null
 }`;
 
@@ -367,6 +511,12 @@ JSON FORMAT:
       "dose": "liều (ví dụ: 100mg, 2 nhát, 500ml)",
       "frequency": "tần suất CAO NHẤT (ví dụ: Sáng 1 viên; tối 1 viên)",
       "route": "đường dùng (Uống, Hít, Tiêm tĩnh mạch, Truyền tĩnh mạch...)",
+      "form": "dạng thuốc (viên, gói, ống, lọ, bình xịt, dung dịch)" ⭐ MỚI,
+      "dosePerAdmin": số lượng mỗi lần (1, 2, 0.5) ⭐ MỚI,
+      "frequencyPerDay": số lần/ngày (1, 2, 3, 4) ⭐ MỚI,
+      "adminTimes": ["08:00", "14:00", "20:00"] hoặc null ⭐ MỚI (giờ dùng cụ thể nếu có),
+      "medicationStatus": "ACTIVE" | "STOPPED" | "CHANGED" | null ⭐ MỚI,
+      "orderSheetNumber": "Tờ số 1" | "Tờ số 2" | null ⭐ MỚI (nếu có ghi số tờ),
       "usageStartDate": "YYYY-MM-DD (ngày SỚM NHẤT xuất hiện)",
       "usageEndDate": "YYYY-MM-DD (ngày MUỘN NHẤT xuất hiện)",
       "variableDosing": true/false (true nếu liều thay đổi),
@@ -375,6 +525,40 @@ JSON FORMAT:
     }
   ]
 }
+
+⚠️ HƯỚNG DẪN CÁC TRƯỜNG MỚI:
+
+1. **form** - Dạng thuốc:
+   - Parse từ dose hoặc drugName: "viên", "gói", "ống", "lọ", "bình xịt", "dung dịch", "viên nang"
+   - VD: "100mg x 2 viên" → form: "viên"
+   - VD: "500ml dung dịch" → form: "dung dịch"
+
+2. **dosePerAdmin** - Số lượng mỗi lần:
+   - Parse từ dose: "1 viên" → 1, "2 viên" → 2, "0.5 viên" → 0.5
+   - Parse từ frequency nếu có: "Sáng 2 viên; tối 1 viên" → dùng số cao nhất (2)
+
+3. **frequencyPerDay** - Số lần/ngày:
+   - Parse từ frequency: "2 lần/ngày" → 2
+   - "Sáng 1 viên; tối 1 viên" → 2
+   - "Sáng chiều tối" → 3
+   - "Mỗi 8 giờ" → 3
+
+4. **adminTimes** - Giờ dùng thuốc (inpatient):
+   - Nếu có ghi giờ cụ thể: "Tiêm 8h, 14h, 20h" → ["08:00", "14:00", "20:00"]
+   - "Sáng" → ["08:00"], "Chiều" → ["14:00"], "Tối" → ["20:00"]
+   - "Sáng chiều tối" → ["08:00", "14:00", "20:00"]
+   - Không có giờ cụ thể → null
+
+5. **medicationStatus**:
+   - "ACTIVE": Thuốc đang dùng (xuất hiện ở trang cuối hoặc không có dấu hiệu ngừng)
+   - "STOPPED": Thuốc đã ngừng (biến mất ở giữa chừng, có ghi "ngừng", "stop")
+   - "CHANGED": Thuốc thay đổi liều/tần suất (có variableDosing: true)
+   - null: Không rõ
+
+6. **orderSheetNumber**:
+   - Nếu tờ điều trị có ghi "Tờ số 1", "Tờ số 2", "Tờ 3" → extract
+   - Giúp tracking thuốc theo thời gian
+   - Không có → null
 
 ⚠️ MEDICATION SWITCHING (quan trọng):
 - Nếu thuốc A biến mất và thuốc B xuất hiện → 2 thuốc riêng
@@ -1463,17 +1647,26 @@ TRÍCH XUẤT TẤT CẢ CÁC TRƯỜNG:
 export async function extractDataFromDocument(
   textContent: string,
   fileType: "pdf" | "docx",
-  fileGroup?: string  // NEW: "admin", "lab", or "prescription"
+  fileGroup?: string,  // "admin", "lab", or "prescription"
+  caseType?: string    // NEW: "inpatient" or "outpatient"
 ): Promise<any> {
-  // Select specialized prompt based on fileGroup
+  // Select specialized prompt based on fileGroup AND caseType
   let userPromptTemplate: string;
   
   if (fileGroup === "admin") {
+    // Admin documents (medical records) - use BENH_AN_PROMPT for inpatient
     userPromptTemplate = BENH_AN_PROMPT;
   } else if (fileGroup === "lab") {
+    // Lab results - same for both inpatient and outpatient
     userPromptTemplate = CAN_LAM_SANG_PROMPT;
   } else if (fileGroup === "prescription") {
-    userPromptTemplate = TO_DIEU_TRI_PROMPT;
+    // Prescription - different prompts for inpatient vs outpatient
+    if (caseType === "outpatient") {
+      userPromptTemplate = OUTPATIENT_PRESCRIPTION_PROMPT;
+    } else {
+      // Inpatient uses TO_DIEU_TRI_PROMPT (treatment sheet)
+      userPromptTemplate = TO_DIEU_TRI_PROMPT;
+    }
   } else {
     // Fallback: use original comprehensive prompt for backward compatibility
     userPromptTemplate = getComprehensivePrompt();

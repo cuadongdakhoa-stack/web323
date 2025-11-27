@@ -63,6 +63,7 @@ const AUTOSAVE_KEY = "new-case-draft";
 const AUTOSAVE_INTERVAL = 30000; // 30 seconds
 
 const INITIAL_FORM_DATA = {
+  caseType: "" as "" | "inpatient" | "outpatient",
   patientName: "",
   patientAge: "",
   patientGender: "",
@@ -193,15 +194,18 @@ export default function NewCase() {
             setExtractionStage(`Đang tải lên ${batch.length} file (batch ${batchIndex + 1}/${batches.length})`);
             setExtractionProgress(batchProgress + 5);
             
-            const formData = new FormData();
+            const uploadFormData = new FormData();
             batch.forEach(file => {
-              formData.append('files', file);
+              uploadFormData.append('files', file);
             });
             
             // Add fileGroup to FormData if provided
             if (fileGroup) {
-              formData.append('fileGroup', fileGroup);
+              uploadFormData.append('fileGroup', fileGroup);
             }
+            
+            // Add caseType to FormData (important for prompt selection)
+            uploadFormData.append('caseType', formData.caseType);
             
             // Stage 2: Sending to server (20-40%)
             setExtractionStage(`Đang gửi batch ${batchIndex + 1}/${batches.length} đến server...`);
@@ -209,7 +213,7 @@ export default function NewCase() {
             
             const response = await fetch('/api/cases/extract', {
               method: 'POST',
-              body: formData,
+              body: uploadFormData,
               credentials: 'include',
             });
 
@@ -327,13 +331,15 @@ export default function NewCase() {
         if (data.medications && Array.isArray(data.medications) && data.medications.length > 0) {
           setMedications(prev => {
             const seenMedications = new Set<string>(
-              prev.map(m => `${m.drugName.trim().toLowerCase()}_${m.usageStartDate || ''}_${m.usageEndDate || ''}`)
+              prev.filter(m => m && typeof m === 'object' && m.drugName)
+                .map(m => `${m.drugName.trim().toLowerCase()}_${m.usageStartDate || ''}_${m.usageEndDate || ''}`)
             );
-            
+
             const extractedMeds = data.medications
               .filter((med: any) => {
+                if (!med || typeof med !== 'object') return false;
                 if (!med.drugName || !med.drugName.trim()) return false;
-                
+                if (!med.dose || !med.frequency || !med.route) return false;
                 const medKey = `${med.drugName.trim().toLowerCase()}_${med.usageStartDate || ''}_${med.usageEndDate || ''}`;
                 if (seenMedications.has(medKey)) return false;
                 seenMedications.add(medKey);
@@ -342,7 +348,7 @@ export default function NewCase() {
               .map((med: any) => {
                 let startDate = '';
                 let endDate = '';
-                
+
                 if (med.usageStartDate) {
                   try {
                     const start = new Date(med.usageStartDate);
@@ -351,7 +357,7 @@ export default function NewCase() {
                     }
                   } catch (e) {}
                 }
-                
+
                 if (med.usageEndDate) {
                   try {
                     const end = new Date(med.usageEndDate);
@@ -364,19 +370,19 @@ export default function NewCase() {
                     }
                   } catch (e) {}
                 }
-                
+
                 return {
                   id: crypto.randomUUID(),
                   drugName: med.drugName.trim(),
-                  prescribedDose: med.dose || '',
-                  prescribedFrequency: med.frequency || '',
-                  prescribedRoute: med.route || 'Uống',
-                  indication: '',
+                  prescribedDose: med.dose,
+                  prescribedFrequency: med.frequency,
+                  prescribedRoute: med.route,
+                  indication: med.indication || '',
                   usageStartDate: startDate,
                   usageEndDate: endDate,
                 };
               });
-            
+
             totalMeds += extractedMeds.length;
             return [...prev, ...extractedMeds];
           });
@@ -400,11 +406,23 @@ export default function NewCase() {
       });
     },
     onError: (error: any) => {
+      let errorDetail = "";
+      if (error?.response) {
+        errorDetail = JSON.stringify(error.response, null, 2);
+      } else if (error?.data) {
+        errorDetail = JSON.stringify(error.data, null, 2);
+      } else if (error?.message) {
+        errorDetail = error.message;
+      } else {
+        errorDetail = String(error);
+      }
       toast({
         variant: "destructive",
         title: "Lỗi upload",
-        description: error.message || "Không thể trích xuất dữ liệu từ file",
+        description: errorDetail || "Không thể trích xuất dữ liệu từ file",
       });
+      // Log ra console để dev dễ debug
+      console.error("[Medications Batch Error]", error);
     },
   });
 
@@ -572,12 +590,11 @@ export default function NewCase() {
       
       const caseResult = await caseResponse.json();
       
-      for (let i = 0; i < data.medications.length; i++) {
-        const med = data.medications[i];
-        await apiRequest("/api/medications", {
-          method: "POST",
-          body: JSON.stringify({
-            caseId: caseResult.id,
+      if (Array.isArray(data.medications) && data.medications.length > 0) {
+        // Lọc kỹ để không có phần tử undefined/null
+        const validMeds = data.medications
+          .filter(med => med && typeof med === 'object' && med.drugName && med.prescribedDose && med.prescribedFrequency && med.prescribedRoute)
+          .map((med, i) => ({
             drugName: med.drugName,
             prescribedDose: med.prescribedDose,
             prescribedFrequency: med.prescribedFrequency,
@@ -586,8 +603,16 @@ export default function NewCase() {
             usageStartDate: med.usageStartDate ? new Date(med.usageStartDate).toISOString() : null,
             usageEndDate: med.usageEndDate ? new Date(med.usageEndDate).toISOString() : null,
             orderIndex: i,
-          }),
-        });
+          }));
+        if (validMeds.length > 0) {
+          await apiRequest("/api/medications/batch", {
+            method: "POST",
+            body: JSON.stringify({
+              caseId: caseResult.id,
+              medications: validMeds
+            }),
+          });
+        }
       }
       
       return caseResult;
@@ -615,6 +640,7 @@ export default function NewCase() {
     
     const errors: string[] = [];
     
+    // Basic required fields for all cases
     if (!formData.patientName.trim()) errors.push("Họ và tên bệnh nhân");
     if (!formData.patientAge) errors.push("Tuổi bệnh nhân");
     if (!formData.patientGender) errors.push("Giới tính bệnh nhân");
@@ -895,7 +921,9 @@ export default function NewCase() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="admissionDate">Ngày nhập viện <span className="text-destructive">*</span></Label>
+                  <Label htmlFor="admissionDate">
+                    {formData.caseType === "outpatient" ? "Ngày khám/Ngày kê đơn" : "Ngày nhập viện"} <span className="text-destructive">*</span>
+                  </Label>
                   <Input
                     id="admissionDate"
                     data-testid="input-admission-date"
@@ -914,7 +942,7 @@ export default function NewCase() {
                   <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center text-primary font-semibold">
                     2
                   </div>
-                  <CardTitle>Thông tin lâm sàng</CardTitle>
+                  <CardTitle>Chẩn đoán</CardTitle>
                 </div>
               </CardHeader>
               <CardContent className="space-y-4">
@@ -1326,7 +1354,92 @@ export default function NewCase() {
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {isExtracting && (
+              {/* Case Type Selection - Show only if not selected yet */}
+              {!formData.caseType && (
+                <div className="space-y-4 pb-4 border-b">
+                  <div className="space-y-3">
+                    <Label className="text-base font-semibold">
+                      Loại ca bệnh <span className="text-red-500">*</span>
+                    </Label>
+                    <p className="text-sm text-muted-foreground">
+                      Chọn loại ca bệnh để hiển thị form upload phù hợp
+                    </p>
+                  </div>
+                  
+                  <div className="grid grid-cols-1 gap-3">
+                    {/* Nội trú Button */}
+                    <button
+                      onClick={() => handleChange("caseType", "inpatient")}
+                      className="flex items-start gap-3 p-4 border-2 rounded-lg hover:border-primary hover:bg-accent transition-all text-left group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors flex-shrink-0">
+                        <FileText className="w-5 h-5 text-blue-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold">Nội trú (Inpatient)</h3>
+                          <Badge variant="secondary" className="text-xs">Bệnh nhân nằm viện</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Dành cho bệnh nhân điều trị nội trú, nằm viện
+                        </p>
+                        <div className="text-xs text-muted-foreground space-y-0.5">
+                          <div>✓ Bệnh án nội khoa</div>
+                          <div>✓ Tờ điều trị / Y lệnh</div>
+                          <div>✓ Cận lâm sàng</div>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Ngoại trú Button */}
+                    <button
+                      onClick={() => handleChange("caseType", "outpatient")}
+                      className="flex items-start gap-3 p-4 border-2 rounded-lg hover:border-primary hover:bg-accent transition-all text-left group"
+                    >
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center group-hover:bg-green-200 transition-colors flex-shrink-0">
+                        <FileText className="w-5 h-5 text-green-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-semibold">Ngoại trú (Outpatient)</h3>
+                          <Badge variant="secondary" className="text-xs">Khám ngoại</Badge>
+                        </div>
+                        <p className="text-xs text-muted-foreground mb-2">
+                          Dành cho bệnh nhân khám ngoại trú, không nằm viện
+                        </p>
+                        <div className="text-xs text-muted-foreground space-y-0.5">
+                          <div>✓ Đơn thuốc kê đơn</div>
+                          <div>✓ Bảng kê chi phí</div>
+                          <div>✓ Xét nghiệm</div>
+                        </div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Show case type badge and upload section after selection */}
+              {formData.caseType && (
+                <>
+                  <div className="flex items-center justify-between pb-3 border-b">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={formData.caseType === "inpatient" ? "default" : "secondary"}>
+                        {formData.caseType === "inpatient" ? "Nội trú" : "Ngoại trú"}
+                      </Badge>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => handleChange("caseType", "")}
+                        className="text-xs h-7"
+                      >
+                        Đổi loại ca
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+
+              {formData.caseType && isExtracting && (
                 <div className="space-y-3 p-4 border rounded-lg bg-muted/30 animate-in fade-in duration-300">
                   <div className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin text-primary" />
@@ -1342,14 +1455,31 @@ export default function NewCase() {
                 </div>
               )}
 
-              <Tabs defaultValue="admin" className="space-y-4">
-                <TabsList className="grid w-full grid-cols-3">
-                  <TabsTrigger value="admin">Bệnh án</TabsTrigger>
-                  <TabsTrigger value="lab">Cận lâm sàng</TabsTrigger>
-                  <TabsTrigger value="prescription">Tờ điều trị</TabsTrigger>
-                </TabsList>
+              {formData.caseType && (
+                <>
+              <Tabs defaultValue={formData.caseType === "inpatient" ? "medical_record" : "prescription"} className="space-y-4">
+                {formData.caseType === "inpatient" ? (
+                  <>
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="medical_record">Bệnh án</TabsTrigger>
+                      <TabsTrigger value="treatment">Tờ điều trị</TabsTrigger>
+                      <TabsTrigger value="lab">Cận lâm sàng</TabsTrigger>
+                    </TabsList>
+                  </>
+                ) : (
+                  <>
+                    <TabsList className="grid w-full grid-cols-3">
+                      <TabsTrigger value="prescription">Đơn thuốc</TabsTrigger>
+                      <TabsTrigger value="billing">Bảng kê</TabsTrigger>
+                      <TabsTrigger value="lab_tests">Xét nghiệm</TabsTrigger>
+                    </TabsList>
+                  </>
+                )}
 
-                <TabsContent value="admin" className="space-y-4">
+                {/* INPATIENT TABS */}
+                {formData.caseType === "inpatient" && (
+                  <>
+                    <TabsContent value="medical_record" className="space-y-4">
                   <input
                     ref={fileInputRef}
                     type="file"
@@ -1397,6 +1527,58 @@ export default function NewCase() {
                     </p>
                     <p className="text-xs text-muted-foreground">
                       Giấy nhập viện, hồ sơ bệnh án (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
+                    </p>
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="treatment" className="space-y-4">
+                  <input
+                    ref={fileInputRefPrescription}
+                    type="file"
+                    accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
+                    onChange={handleFileSelectPrescription}
+                    className="hidden"
+                    multiple
+                  />
+                  
+                  {selectedFilesPrescription.length > 0 && (
+                    <div className="space-y-2">
+                      <p className="text-sm font-medium">File đã chọn ({selectedFilesPrescription.length}):</p>
+                      {selectedFilesPrescription.map((file, index) => (
+                        <div 
+                          key={index}
+                          className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
+                        >
+                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm truncate">{file.name}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {(file.size / 1024).toFixed(1)} KB
+                            </p>
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleRemoveFilePrescription(index)}
+                            className="flex-shrink-0"
+                          >
+                            <X className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  <div 
+                    className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
+                    onClick={() => !uploadMutation.isPending && fileInputRefPrescription.current?.click()}
+                  >
+                    <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                    <p className="text-sm text-muted-foreground mb-1">
+                      Click để chọn file Tờ điều trị
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Đơn thuốc, y lệnh, tờ điều trị (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
                     </p>
                   </div>
                 </TabsContent>
@@ -1452,58 +1634,169 @@ export default function NewCase() {
                     </p>
                   </div>
                 </TabsContent>
+                  </>
+                )}
 
-                <TabsContent value="prescription" className="space-y-4">
-                  <input
-                    ref={fileInputRefPrescription}
-                    type="file"
-                    accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
-                    onChange={handleFileSelectPrescription}
-                    className="hidden"
-                    multiple
-                  />
-                  
-                  {selectedFilesPrescription.length > 0 && (
-                    <div className="space-y-2">
-                      <p className="text-sm font-medium">File đã chọn ({selectedFilesPrescription.length}):</p>
-                      {selectedFilesPrescription.map((file, index) => (
-                        <div 
-                          key={index}
-                          className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
-                        >
-                          <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm truncate">{file.name}</p>
-                            <p className="text-xs text-muted-foreground">
-                              {(file.size / 1024).toFixed(1)} KB
-                            </p>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            onClick={() => handleRemoveFilePrescription(index)}
-                            className="flex-shrink-0"
-                          >
-                            <X className="w-4 h-4" />
-                          </Button>
+                {/* OUTPATIENT TABS */}
+                {formData.caseType === "outpatient" && (
+                  <>
+                    <TabsContent value="prescription" className="space-y-4">
+                      <input
+                        ref={fileInputRef}
+                        type="file"
+                        accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
+                        onChange={handleFileSelect}
+                        className="hidden"
+                        multiple
+                      />
+                      
+                      {selectedFiles.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">File đã chọn ({selectedFiles.length}):</p>
+                          {selectedFiles.map((file, index) => (
+                            <div 
+                              key={index}
+                              className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
+                            >
+                              <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm truncate">{file.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {(file.size / 1024).toFixed(1)} KB
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveFile(index)}
+                                className="flex-shrink-0"
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      )}
 
-                  <div 
-                    className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
-                    onClick={() => !uploadMutation.isPending && fileInputRefPrescription.current?.click()}
-                  >
-                    <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
-                    <p className="text-sm text-muted-foreground mb-1">
-                      Click để chọn file Tờ điều trị
-                    </p>
-                    <p className="text-xs text-muted-foreground">
-                      Đơn thuốc, y lệnh, tờ điều trị (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
-                    </p>
-                  </div>
-                </TabsContent>
+                      <div 
+                        className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
+                        onClick={() => !uploadMutation.isPending && fileInputRef.current?.click()}
+                      >
+                        <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                        <p className="text-sm text-muted-foreground mb-1">
+                          Click để chọn file Đơn thuốc
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Đơn thuốc kê đơn (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
+                        </p>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="billing" className="space-y-4">
+                      <input
+                        ref={fileInputRefPrescription}
+                        type="file"
+                        accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
+                        onChange={handleFileSelectPrescription}
+                        className="hidden"
+                        multiple
+                      />
+                      
+                      {selectedFilesPrescription.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">File đã chọn ({selectedFilesPrescription.length}):</p>
+                          {selectedFilesPrescription.map((file, index) => (
+                            <div 
+                              key={index}
+                              className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
+                            >
+                              <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm truncate">{file.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {(file.size / 1024).toFixed(1)} KB
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveFilePrescription(index)}
+                                className="flex-shrink-0"
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div 
+                        className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
+                        onClick={() => !uploadMutation.isPending && fileInputRefPrescription.current?.click()}
+                      >
+                        <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                        <p className="text-sm text-muted-foreground mb-1">
+                          Click để chọn file Bảng kê
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Bảng kê chi phí, danh sách thuốc (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
+                        </p>
+                      </div>
+                    </TabsContent>
+
+                    <TabsContent value="lab_tests" className="space-y-4">
+                      <input
+                        ref={fileInputRefLab}
+                        type="file"
+                        accept=".pdf,.docx,.doc,.ppt,.pptx,.jpg,.jpeg,.png"
+                        onChange={handleFileSelectLab}
+                        className="hidden"
+                        multiple
+                      />
+                      
+                      {selectedFilesLab.length > 0 && (
+                        <div className="space-y-2">
+                          <p className="text-sm font-medium">File đã chọn ({selectedFilesLab.length}):</p>
+                          {selectedFilesLab.map((file, index) => (
+                            <div 
+                              key={index}
+                              className="flex items-center gap-2 p-2 border rounded-lg bg-muted/50"
+                            >
+                              <FileText className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm truncate">{file.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {(file.size / 1024).toFixed(1)} KB
+                                </p>
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => handleRemoveFileLab(index)}
+                                className="flex-shrink-0"
+                              >
+                                <X className="w-4 h-4" />
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div 
+                        className="border-2 border-dashed rounded-lg p-6 text-center cursor-pointer hover-elevate"
+                        onClick={() => !uploadMutation.isPending && fileInputRefLab.current?.click()}
+                      >
+                        <Upload className="w-10 h-10 mx-auto text-muted-foreground mb-3" />
+                        <p className="text-sm text-muted-foreground mb-1">
+                          Click để chọn file Xét nghiệm
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Xét nghiệm máu, hóa sinh, nước tiểu, vi sinh, CT scan... (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)
+                        </p>
+                      </div>
+                    </TabsContent>
+                  </>
+                )}
               </Tabs>
 
               {/* Nút phân tích tất cả - hiện khi có ít nhất 1 loại file */}
@@ -1521,6 +1814,8 @@ export default function NewCase() {
                     Phân tích lần lượt: Bệnh án → Cận lâm sàng → Tờ điều trị
                   </p>
                 </div>
+              )}
+                </>
               )}
             </CardContent>
           </Card>

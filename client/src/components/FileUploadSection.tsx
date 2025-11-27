@@ -5,6 +5,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Upload, FileText, Loader2, Download, Trash2, File, Image, Sparkles } from "lucide-react";
@@ -21,6 +22,8 @@ import { z } from "zod";
 
 interface FileUploadSectionProps {
   caseId: string;
+  initialCaseType?: "inpatient" | "outpatient";
+  onCaseTypeChange?: (caseType: "inpatient" | "outpatient") => void;
 }
 
 interface UploadedFile {
@@ -61,25 +64,73 @@ const DEFAULT_SUGGESTIONS: DocumentSuggestions = {
   prescription: { needed: true, reason: "Cần đơn thuốc để kiểm tra tương tác" },
 };
 
-const FILE_GROUP_LABELS: Record<string, string> = {
-  admin: "Bệnh án / Hồ sơ vào viện",
-  lab: "Cận lâm sàng",
-  prescription: "Tờ điều trị / Đơn thuốc",
-};
+// File groups for INPATIENT (Nội trú)
+const INPATIENT_FILE_GROUPS = [
+  {
+    key: "medical_record",
+    label: "Bệnh án",
+    description: "Bệnh án nội khoa, thông tin bệnh nhân (họ tên, tuổi, giới, cân nặng, chiều cao, chẩn đoán)",
+    multiple: false,
+    required: true,
+  },
+  {
+    key: "treatment_sheet",
+    label: "Tờ điều trị",
+    description: "Tờ điều trị, y lệnh, thông tin thuốc và liều dùng",
+    multiple: false,
+    required: true,
+  },
+  {
+    key: "lab_results",
+    label: "Cận lâm sàng",
+    description: "Kết quả xét nghiệm, chẩn đoán hình ảnh (có thể upload nhiều file)",
+    multiple: true,
+    required: false,
+  },
+];
 
-const FILE_GROUP_DESCRIPTIONS: Record<string, string> = {
-  admin: "Bệnh án, giấy nhập viện, thông tin bệnh nhân (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
-  lab: "Kết quả xét nghiệm, chẩn đoán hình ảnh, creatinine (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
-  prescription: "Tờ điều trị, đơn thuốc, y lệnh (PDF, DOC, DOCX, PPT, PPTX, JPG, PNG)",
-};
+// File groups for OUTPATIENT (Ngoại trú)
+const OUTPATIENT_FILE_GROUPS = [
+  {
+    key: "prescription",
+    label: "Đơn thuốc",
+    description: "Đơn thuốc kê đơn, thông tin thuốc và liều dùng",
+    multiple: false,
+    required: true,
+  },
+  {
+    key: "billing",
+    label: "Bảng kê",
+    description: "Bảng kê chi phí, danh sách thuốc và dịch vụ",
+    multiple: false,
+    required: false,
+  },
+  {
+    key: "lab_tests",
+    label: "Xét nghiệm",
+    description: "Xét nghiệm máu, hóa sinh, nước tiểu, vi sinh, chẩn đoán hình ảnh (có thể upload nhiều file)",
+    multiple: true,
+    required: false,
+  },
+];
 
-const FILE_GROUP_ACCEPTS: Record<string, string> = {
-  admin: ".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png",
-  lab: ".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png",
-  prescription: ".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png",
-};
+const FILE_ACCEPTS = ".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png";
 
-function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
+function FileGroupUpload({ 
+  caseId, 
+  group, 
+  label, 
+  description, 
+  multiple, 
+  required 
+}: { 
+  caseId: string; 
+  group: string;
+  label: string;
+  description: string;
+  multiple: boolean;
+  required: boolean;
+}) {
   const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [selectedFiles, setSelectedFiles] = useState<FileList | null>(null);
@@ -245,10 +296,10 @@ function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
         <input
           ref={fileInputRef}
           type="file"
-          accept={FILE_GROUP_ACCEPTS[group]}
+          accept={FILE_ACCEPTS}
           onChange={handleFileSelect}
           className="hidden"
-          multiple
+          multiple={multiple}
           data-testid={`input-file-${group}`}
         />
 
@@ -294,8 +345,14 @@ function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
           ) : (
             <>
               <Upload className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
-              <p className="text-sm text-muted-foreground mb-2">
-                {FILE_GROUP_DESCRIPTIONS[group]}
+              <p className="text-sm font-medium mb-1">
+                {label} {required && <span className="text-red-500">*</span>}
+              </p>
+              <p className="text-xs text-muted-foreground mb-2">
+                {description}
+              </p>
+              <p className="text-xs text-muted-foreground mb-4">
+                Hỗ trợ: PDF, DOC, DOCX, PPT, PPTX, JPG, PNG {multiple && "(có thể chọn nhiều file)"}
               </p>
               <Button
                 variant="outline"
@@ -376,8 +433,17 @@ function FileGroupUpload({ caseId, group }: { caseId: string; group: string }) {
   );
 }
 
-export default function FileUploadSection({ caseId }: FileUploadSectionProps) {
+export default function FileUploadSection({ caseId, initialCaseType, onCaseTypeChange }: FileUploadSectionProps) {
+  const [selectedCaseType, setSelectedCaseType] = useState<"inpatient" | "outpatient" | null>(initialCaseType || null);
+  const fileGroups = selectedCaseType === "inpatient" ? INPATIENT_FILE_GROUPS : OUTPATIENT_FILE_GROUPS;
   const { toast } = useToast();
+
+  const handleCaseTypeSelect = (type: "inpatient" | "outpatient") => {
+    setSelectedCaseType(type);
+    if (onCaseTypeChange) {
+      onCaseTypeChange(type);
+    }
+  };
 
   const { data: suggestions, refetch } = useQuery<DocumentSuggestions>({
     queryKey: ["/api/cases", caseId, "suggest-documents"],
@@ -455,82 +521,158 @@ export default function FileUploadSection({ caseId }: FileUploadSectionProps) {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle>Tài liệu đính kèm</CardTitle>
+            <CardTitle>Upload tài liệu</CardTitle>
             <CardDescription>
-              Upload riêng 3 loại: Bệnh án, Cận lâm sàng, Tờ điều trị (không bắt buộc đủ cả 3)
+              {selectedCaseType 
+                ? (selectedCaseType === "inpatient" 
+                    ? "Nội trú: Cần Bệnh án, Tờ điều trị, Cận lâm sàng" 
+                    : "Ngoại trú: Cần Đơn thuốc, Bảng kê, Xét nghiệm")
+                : "Chọn loại ca bệnh để bắt đầu upload tài liệu"}
             </CardDescription>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleGetSuggestions}
-            disabled={getSuggestionsMutation.isPending}
-            data-testid="button-ai-suggest"
-          >
-            {getSuggestionsMutation.isPending ? (
-              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-            ) : (
-              <Sparkles className="w-4 h-4 mr-2" />
-            )}
-            Gợi ý AI
-          </Button>
+          {selectedCaseType && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleGetSuggestions}
+              disabled={getSuggestionsMutation.isPending}
+              data-testid="button-ai-suggest"
+            >
+              {getSuggestionsMutation.isPending ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <Sparkles className="w-4 h-4 mr-2" />
+              )}
+              Gợi ý AI
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
-        {showSuggestions && suggestions && (
-          <div className="mb-4 space-y-2">
-            {suggestions.admin?.needed && (
-              <Alert data-testid="alert-suggest-admin">
-                <AlertDescription>
-                  <strong>Bệnh án:</strong> {suggestions.admin?.reason || "Cần bệnh án hoặc giấy nhập viện"}
-                </AlertDescription>
-              </Alert>
-            )}
-            {suggestions.lab?.needed && (
-              <Alert data-testid="alert-suggest-lab">
-                <AlertDescription>
-                  <strong>Cận lâm sàng:</strong> {suggestions.lab?.reason || "Cần kết quả xét nghiệm"}
-                </AlertDescription>
-              </Alert>
-            )}
-            {suggestions.prescription?.needed && (
-              <Alert data-testid="alert-suggest-prescription">
-                <AlertDescription>
-                  <strong>Tờ điều trị:</strong> {suggestions.prescription?.reason || "Cần tờ điều trị hoặc đơn thuốc"}
-                </AlertDescription>
-              </Alert>
-            )}
+        {/* Case Type Selection */}
+        {!selectedCaseType && (
+          <div className="space-y-4">
+            <div className="space-y-3">
+              <Label className="text-base font-semibold">Loại ca bệnh <span className="text-red-500">*</span></Label>
+              <p className="text-sm text-muted-foreground">
+                Chọn loại ca bệnh để hệ thống hiển thị form upload phù hợp
+              </p>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
+              {/* Nội trú Card */}
+              <button
+                onClick={() => handleCaseTypeSelect("inpatient")}
+                className="flex flex-col p-6 border-2 rounded-lg hover:border-primary hover:bg-accent transition-all text-left group"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-12 h-12 rounded-full bg-blue-100 flex items-center justify-center group-hover:bg-blue-200 transition-colors">
+                    <FileText className="w-6 h-6 text-blue-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">Nội trú (Inpatient)</h3>
+                    <Badge variant="secondary" className="mt-1">Bệnh nhân nằm viện</Badge>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Dành cho bệnh nhân điều trị nội trú, nằm viện
+                </p>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <div>✓ Bệnh án nội khoa</div>
+                  <div>✓ Tờ điều trị / Y lệnh</div>
+                  <div>✓ Cận lâm sàng (xét nghiệm, chẩn đoán hình ảnh)</div>
+                </div>
+              </button>
+
+              {/* Ngoại trú Card */}
+              <button
+                onClick={() => handleCaseTypeSelect("outpatient")}
+                className="flex flex-col p-6 border-2 rounded-lg hover:border-primary hover:bg-accent transition-all text-left group"
+              >
+                <div className="flex items-center gap-3 mb-3">
+                  <div className="w-12 h-12 rounded-full bg-green-100 flex items-center justify-center group-hover:bg-green-200 transition-colors">
+                    <FileText className="w-6 h-6 text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">Ngoại trú (Outpatient)</h3>
+                    <Badge variant="secondary" className="mt-1">Bệnh nhân khám ngoại</Badge>
+                  </div>
+                </div>
+                <p className="text-sm text-muted-foreground mb-3">
+                  Dành cho bệnh nhân khám ngoại trú, không nằm viện
+                </p>
+                <div className="text-xs text-muted-foreground space-y-1">
+                  <div>✓ Đơn thuốc kê đơn</div>
+                  <div>✓ Bảng kê chi phí</div>
+                  <div>✓ Xét nghiệm (máu, hóa sinh, nước tiểu, CT...)</div>
+                </div>
+              </button>
+            </div>
           </div>
         )}
 
-        <Tabs defaultValue="admin" className="space-y-4">
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="admin" data-testid="tab-files-admin">
-              {FILE_GROUP_LABELS.admin}
-              {suggestions?.admin?.needed && <Badge variant="destructive" className="ml-2">!</Badge>}
-            </TabsTrigger>
-            <TabsTrigger value="lab" data-testid="tab-files-lab">
-              {FILE_GROUP_LABELS.lab}
-              {suggestions?.lab?.needed && <Badge variant="destructive" className="ml-2">!</Badge>}
-            </TabsTrigger>
-            <TabsTrigger value="prescription" data-testid="tab-files-prescription">
-              {FILE_GROUP_LABELS.prescription}
-              {suggestions?.prescription?.needed && <Badge variant="destructive" className="ml-2">!</Badge>}
-            </TabsTrigger>
-          </TabsList>
+        {/* File Upload Section - Only show after case type selected */}
+        {selectedCaseType && (
+          <>
+            <div className="flex items-center justify-between mb-4 pb-3 border-b">
+              <div className="flex items-center gap-2">
+                <Badge variant={selectedCaseType === "inpatient" ? "default" : "secondary"}>
+                  {selectedCaseType === "inpatient" ? "Nội trú" : "Ngoại trú"}
+                </Badge>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setSelectedCaseType(null)}
+                  className="text-xs"
+                >
+                  Đổi loại ca
+                </Button>
+              </div>
+            </div>
 
-          <TabsContent value="admin">
-            <FileGroupUpload caseId={caseId} group="admin" />
-          </TabsContent>
+            {showSuggestions && suggestions && (
+              <div className="mb-4 space-y-2">
+                {Object.entries(suggestions).map(([key, value]) => {
+                  if (value?.needed) {
+                    const group = fileGroups.find(g => g.key === key);
+                    return (
+                      <Alert key={key}>
+                        <AlertDescription>
+                          <strong>{group?.label || key}:</strong> {value.reason}
+                        </AlertDescription>
+                      </Alert>
+                    );
+                  }
+                  return null;
+                })}
+              </div>
+            )}
 
-          <TabsContent value="lab">
-            <FileGroupUpload caseId={caseId} group="lab" />
-          </TabsContent>
+            <Tabs defaultValue={fileGroups[0].key} className="space-y-4">
+              <TabsList className={`grid w-full grid-cols-${fileGroups.length}`}>
+                {fileGroups.map(group => (
+                  <TabsTrigger key={group.key} value={group.key} data-testid={`tab-files-${group.key}`}>
+                    {group.label}
+                    {group.required && <span className="text-red-500 ml-1">*</span>}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
 
-          <TabsContent value="prescription">
-            <FileGroupUpload caseId={caseId} group="prescription" />
-          </TabsContent>
-        </Tabs>
+              {fileGroups.map(group => (
+                <TabsContent key={group.key} value={group.key}>
+                  <FileGroupUpload 
+                    caseId={caseId} 
+                    group={group.key}
+                    label={group.label}
+                    description={group.description}
+                    multiple={group.multiple}
+                    required={group.required}
+                  />
+                </TabsContent>
+              ))}
+            </Tabs>
+          </>
+        )}
       </CardContent>
     </Card>
   );

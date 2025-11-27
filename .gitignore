@@ -4,30 +4,22 @@ node_modules
 # Build output
 dist
 
-# OS
-.DS_Store
-server/public
-vite.config.ts.*
-*.tar.gz
+# Environment
 .env
 .env.local
+.env.*.local
+
+# Uploads
 uploads/*
 !uploads/.gitkeep
 
-# Replit files (not needed)
-.replit
-.config
-.local
-
-# Deployment
-.vercel
-.netlify
-
 # OS
+.DS_Store
 Thumbs.db
 *.log
 npm-debug.log*
 yarn-debug.log*
+*.tar.gz
 
 # IDE
 .vscode/*
@@ -37,8 +29,27 @@ yarn-debug.log*
 *.swp
 *.swo
 
+# Deployment
+.vercel
+.netlify
+
 # Test/Demo files
-attached_assets/
-# Allow logo and favicon
-!client/public/logo.png
-!client/public/favicon.png
+*.txt
+*.xls
+*.xlsx
+!README*.txt
+test-*
+*-output.*
+*-test.*
+
+# Documentation (keep only main README)
+DEPLOY*.md
+RAILWAY*.md
+replit.md
+
+# Temporary
+server/public
+vite.config.ts.*
+.replit
+.config
+.local
