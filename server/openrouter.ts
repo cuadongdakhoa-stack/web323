@@ -233,24 +233,56 @@ JSON RESPONSE FORMAT:
 
 const TO_DIEU_TRI_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
 
-Trích xuất từ TỜ ĐIỀU TRỊ / ĐƠN THUỐC. CHỈ TRÍCH XUẤT DANH SÁCH THUỐC:
+Trích xuất từ TỜ ĐIỀU TRỊ / ĐƠN THUỐC (cả NGOẠI TRÚ và NỘI TRÚ). CHỈ TRÍCH XUẤT DANH SÁCH THUỐC:
+
+⚠️ NHẬN DIỆN LOẠI ĐƠN (TỰ ĐỘNG):
+
+📄 ĐƠN NGOẠI TRÚ (OUTPATIENT):
+- Đặc điểm: Mã hồ sơ dạng "TN.xxx", bảng kê chi phí BHYT/Tự túc
+- Format: Bảng grid đơn giản, không timeline theo ngày
+- Thuốc: Chủ yếu uống, 10-40 ngày
+- Ngày: Thường chỉ có 1 ngày khám (usageStartDate = usageEndDate = ngày khám)
+
+🏥 ĐƠN NỘI TRÚ (INPATIENT):
+- Đặc điểm: Số hồ sơ thuần (không có TN.), tường thuật theo ngày
+- Format: Mỗi ngày 1 section (23/10/2025, 24/10/2025...), có giờ tiêm cụ thể (9h, 10h, 15h)
+- Thuốc: Có cả tiêm (inj), truyền (NaCl, Ringer's, Glucose), uống
+- Vật tư: Kim tiêm, bơm tiêm, bộ truyền, dây thở oxy → PHẢI LỌC BỎ
+- Timeline: Thuốc thay đổi theo tiến triển bệnh (ngày 23-27: A, ngày 28+: B)
+
+⚠️ XỬ LÝ TIMELINE:
+- **NGOẠI TRÚ**: usageStartDate = usageEndDate = ngày khám (hoặc để null nếu không có)
+- **NỘI TRÚ**: usageStartDate = ngày SỚM NHẤT xuất hiện, usageEndDate = ngày MUỘN NHẤT xuất hiện
 
 ⚠️ QUY TẮC 1: KHÔNG RƠI MẤT THUỐC (CỰC KỲ QUAN TRỌNG)
 
 PHẢI trích xuất TẤT CẢ các dòng thuốc hợp lệ. CHỈ BỎ QUA:
 
-DANH SÁCH LOẠI TRỪ (BLACKLIST - VẬT TƯ):
-- Bơm tiêm, Kim tiêm, Băng, Gạc, Găng tay, Khẩu trang
-- Ống thông (catheter), Dây truyền, Bộ truyền dịch
-- Dịch vụ y tế, Phí khám, Phí giường, Phí xét nghiệm
-- Vật tư tiêu hao y tế (không phải thuốc)
+DANH SÁCH LOẠI TRỪ (BLACKLIST - VẬT TƯ Y TẾ):
+⚠️ **CRITICAL**: TUYỆT ĐỐI KHÔNG trích xuất các vật tư sau vào medications:
+- **Dụng cụ tiêm**: Bơm tiêm, Kim tiêm (18G, 21G, 23G...), Bộ truyền dịch, Dây truyền
+- **Vật tư hỗ trợ**: Dây thở oxy, Ống thông (catheter), Găng tay, Khẩu trang, Băng, Gạc
+- **Dịch vụ**: Phí khám, Phí giường, Phí xét nghiệm, Phí thủ thuật
+- **Vật tư tiêu hao khác**: Không phải thuốc/dung dịch điều trị
+
+✅ **VÍ DỤ BỊ LOẠI TRỪ (ĐƠN NỘI TRÚ)**:
+- "Kim tiêm 21G" → BỎ QUA
+- "Bơm tiêm 5ml" → BỎ QUA
+- "Bộ truyền dịch" → BỎ QUA
+- "Dây thở oxy" → BỎ QUA
 
 ✅ CHẤP NHẬN TẤT CẢ LOẠI THUỐC:
-- Thuốc Tây y (viên, viên nang, tiêm, nhỏ mắt, bôi da, xịt...)
-- Dung dịch truyền (NaCl 0.9%, Glucose, Ringer's Lactate, Lipofundin, Aminoplasmal...)
-- Thuốc Đông y, thảo dược (Hoa Đà tái tạo hoàn, Bổ can, An thần...)
-- TPBVSK (Glucosamine, Omega-3, Vitamin...)
-- Flexsa, Lipanthyl, tất cả thuốc có tên thương mại
+- **Thuốc uống**: Viên, viên nang, viên nén, dạng bột, siro
+- **Thuốc tiêm** (có đuôi "inj" hoặc ghi "injection"): Atileucine inj 500mg, Cerebrolysin inj, Vitamin B1 inj...
+- **Dung dịch truyền**: NaCl 0.9%, Glucose 5%, Ringer's Lactate, Lipofundin, Aminoplasmal, Plasmalyte...
+- **Thuốc khác**: Nhỏ mắt, bôi da, xịt, hít (evohaler, inhaler)
+- **Thuốc Đông y**: Hoa Đà tái tạo hoàn, Bổ can, An thần...
+- **TPBVSK**: Glucosamine, Omega-3, Vitamin...
+
+⚠️ **LƯU Ý THUỐC TIÊM/TRUYỀN** (INPATIENT):
+- Thường có giờ cụ thể: "Tiêm tĩnh mạch chậm 10h, 15h" → ghi vào notes hoặc frequency
+- Tốc độ truyền: "Truyền 40-50 giọt/phút, 8h-20h" → ghi vào notes
+- VÍ DỤ: Atileucine inj 500mg → drugName: "Atileucine inj 500mg", dose: "500mg/5ml x2 Ống", frequency: "Sáng 1 Ống; chiều 1 Ống", route: "Tiêm tĩnh mạch", notes: "Tiêm chậm 10h, 15h"
 
 ⚠️ QUY TẮC 2: NGÀY BẮT ĐẦU / KẾT THÚC - THUẬT TOÁN MIN-MAX (CỰC KỲ QUAN TRỌNG)
 

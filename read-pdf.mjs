@@ -1,24 +1,42 @@
 import fs from 'fs';
-import pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const PDFParser = require('pdf2json');
 
 async function extractTextFromPDF(filePath) {
-  try {
-    const data = new Uint8Array(fs.readFileSync(filePath));
-    const loadingTask = pdfjsLib.getDocument({ data });
-    const pdf = await loadingTask.promise;
+  return new Promise((resolve, reject) => {
+    const pdfParser = new PDFParser();
     
-    let fullText = '';
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const textContent = await page.getTextContent();
-      const pageText = textContent.items.map(item => item.str).join(' ');
-      fullText += `\n=== PAGE ${i} ===\n${pageText}\n`;
-    }
-    return fullText;
-  } catch (error) {
-    console.error(`Error reading ${filePath}:`, error.message);
-    return '';
-  }
+    pdfParser.on('pdfParser_dataError', errData => {
+      console.error(`Error reading ${filePath}:`, errData.parserError);
+      resolve('');
+    });
+    
+    pdfParser.on('pdfParser_dataReady', pdfData => {
+      try {
+        let text = '';
+        pdfData.Pages.forEach((page, pageIndex) => {
+          text += `\n=== PAGE ${pageIndex + 1} ===\n`;
+          page.Texts.forEach(textItem => {
+            try {
+              const decodedText = decodeURIComponent(textItem.R[0].T);
+              text += decodedText + ' ';
+            } catch (e) {
+              // If decoding fails, use raw text
+              text += textItem.R[0].T + ' ';
+            }
+          });
+          text += '\n';
+        });
+        resolve(text);
+      } catch (error) {
+        console.error(`Error processing PDF data:`, error.message);
+        resolve('');
+      }
+    });
+    
+    pdfParser.loadPDF(filePath);
+  });
 }
 
 const filePath = process.argv[2];
