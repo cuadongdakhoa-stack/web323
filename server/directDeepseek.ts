@@ -128,6 +128,7 @@ export async function callDirectDeepSeek(
     }
     throw error;
   }
+}
 
 /**
  * Extract full case data from multiple PDFs
