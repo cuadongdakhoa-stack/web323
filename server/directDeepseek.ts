@@ -80,41 +80,54 @@ export async function callDirectDeepSeek(
 
   const startTime = Date.now();
 
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`
-    },
-    body: JSON.stringify(requestBody)
-  });
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 180000); // 3 phút timeout
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
-  }
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${apiKey}`
+      },
+      body: JSON.stringify(requestBody),
+      signal: controller.signal
+    });
 
-  const data = await response.json() as DeepSeekResponse;
-  const duration = Date.now() - startTime;
+    clearTimeout(timeoutId);
 
-  console.log(`[DeepSeek V3.2-Exp] Response in ${duration}ms`);
-  console.log(`[DeepSeek V3.2-Exp] Tokens: ${data.usage.prompt_tokens} in + ${data.usage.completion_tokens} out = ${data.usage.total_tokens} total`);
-
-  // Calculate cost (DeepSeek V3.2-Exp pricing: $0.27 per 1M input, $1.10 per 1M output - cache miss)
-  const inputCost = (data.usage.prompt_tokens / 1_000_000) * 0.27;
-  const outputCost = (data.usage.completion_tokens / 1_000_000) * 1.10;
-  const totalCost = inputCost + outputCost;
-  
-  console.log(`[DeepSeek V3.2-Exp] Cost ≈ $${totalCost.toFixed(6)} ($${inputCost.toFixed(6)} in + $${outputCost.toFixed(6)} out)`);
-
-  return {
-    content: data.choices[0].message.content,
-    usage: {
-      ...data.usage,
-      costUsd: totalCost
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
     }
-  };
-}
+
+    const data = await response.json() as DeepSeekResponse;
+    const duration = Date.now() - startTime;
+
+    console.log(`[DeepSeek V3.2-Exp] Response in ${duration}ms`);
+    console.log(`[DeepSeek V3.2-Exp] Tokens: ${data.usage.prompt_tokens} in + ${data.usage.completion_tokens} out = ${data.usage.total_tokens} total`);
+
+    // Calculate cost (DeepSeek V3.2-Exp pricing: $0.27 per 1M input, $1.10 per 1M output - cache miss)
+    const inputCost = (data.usage.prompt_tokens / 1_000_000) * 0.27;
+    const outputCost = (data.usage.completion_tokens / 1_000_000) * 1.10;
+    const totalCost = inputCost + outputCost;
+    
+    console.log(`[DeepSeek V3.2-Exp] Cost ≈ $${totalCost.toFixed(6)} ($${inputCost.toFixed(6)} in + $${outputCost.toFixed(6)} out)`);
+
+    return {
+      content: data.choices[0].message.content,
+      usage: {
+        ...data.usage,
+        costUsd: totalCost
+      }
+    };
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      throw new Error('DeepSeek API timeout sau 3 phút - tài liệu quá phức tạp');
+    }
+    throw error;
+  }
 
 /**
  * Extract full case data from multiple PDFs
