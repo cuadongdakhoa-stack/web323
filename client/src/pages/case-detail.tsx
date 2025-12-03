@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { ArrowLeft, FileText, Beaker, BookOpen, FileSignature, Pill, Loader2, CheckCircle2, AlertCircle, Search, ExternalLink, Edit, X, Save, Download, FileDown } from "lucide-react";
+import { ArrowLeft, FileText, Beaker, BookOpen, FileSignature, Pill, Loader2, CheckCircle2, AlertCircle, Search, ExternalLink, Edit, X, Save, Download, FileDown, ClipboardCheck, ShieldCheck, AlertTriangle } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useForm } from "react-hook-form";
@@ -29,6 +29,12 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 const reportFormSchema = z.object({
   pharmacistName: z.string().min(1, "Tên dược sĩ không được để trống"),
@@ -75,6 +81,27 @@ export default function CaseDetail() {
 
   const { data: evidence, isLoading: evidenceLoading } = useQuery<Evidence[]>({
     queryKey: ["/api/cases", id, "evidence"],
+    enabled: !!id,
+  });
+
+  // ICD Check data
+  const { data: icdCheckData, isLoading: icdCheckLoading } = useQuery<{
+    patientICDList: string[];
+    items: Array<{
+      drugName: string;
+      isInsurance: boolean;
+      icdValid: boolean;
+      matchedICD?: string;
+      matchedPattern?: string;
+      requiredPatterns?: string[];
+      hasContraindication: boolean;
+      contraindicationICD?: string;
+      contraindicationPattern?: string;
+      contraindicationPatterns?: string[];
+    }>;
+    summaryText: string;
+  }>({
+    queryKey: ["/api/cases", id, "icd-check"],
     enabled: !!id,
   });
   
@@ -311,7 +338,7 @@ export default function CaseDetail() {
           <div>
             <h1 className="text-3xl font-semibold mb-2">{caseData.patientName}</h1>
             <p className="text-muted-foreground">
-              {caseData.patientAge} tuổi (năm sinh {new Date().getFullYear() - caseData.patientAge}) • {caseData.patientGender}
+              {caseData.patientAge} tuổi (sinh năm {new Date().getFullYear() - caseData.patientAge}) • {caseData.patientGender}
             </p>
           </div>
           <Badge variant="secondary" data-testid="badge-status">
@@ -331,6 +358,10 @@ export default function CaseDetail() {
           <TabsTrigger value="medications" data-testid="tab-medications">
             <Pill className="w-4 h-4 mr-2" />
             Đơn thuốc
+          </TabsTrigger>
+          <TabsTrigger value="icd-check" data-testid="tab-icd-check">
+            <ClipboardCheck className="w-4 h-4 mr-2" />
+            Kiểm tra mã ICD
           </TabsTrigger>
           <TabsTrigger value="analysis" data-testid="tab-analysis">
             <Beaker className="w-4 h-4 mr-2" />
@@ -359,7 +390,7 @@ export default function CaseDetail() {
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Tuổi (năm sinh)</p>
                 <p className="text-base">
-                  {caseData.patientAge} tuổi ({new Date().getFullYear() - caseData.patientAge})
+                  {caseData.patientAge} tuổi (sinh năm {new Date().getFullYear() - caseData.patientAge})
                 </p>
               </div>
               <div>
@@ -368,11 +399,15 @@ export default function CaseDetail() {
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Cân nặng</p>
-                <p className="text-base">{caseData.patientWeight || "Không có"} kg</p>
+                <p className="text-base">
+                  {caseData.patientWeight ? `${caseData.patientWeight} kg` : "Chưa có dữ liệu"}
+                </p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Chiều cao</p>
-                <p className="text-base">{caseData.patientHeight || "Không có"} cm</p>
+                <p className="text-base">
+                  {caseData.patientHeight ? `${caseData.patientHeight} cm` : "Chưa có dữ liệu"}
+                </p>
               </div>
               <div>
                 <p className="text-sm font-medium text-muted-foreground">Creatinine</p>
@@ -405,19 +440,69 @@ export default function CaseDetail() {
                   ) : null}
                 </p>
               </div>
-              {caseData.diagnosisSecondary && caseData.diagnosisSecondary.length > 0 && (
+
+              {/* Hiển thị tất cả mã ICD (chính + phụ) */}
+              {caseData.icdCodes && typeof caseData.icdCodes === 'object' && (
+                <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">📋 Mã bệnh (ICD-10)</p>
+                  <div className="space-y-2">
+                    {/* Mã bệnh chính */}
+                    {caseData.icdCodes.main && (
+                      <div>
+                        <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Mã chính:</span>
+                        <span className="ml-2 font-mono text-sm font-semibold text-blue-900 dark:text-blue-100">
+                          {String(caseData.icdCodes.main)}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {/* Mã bệnh kèm theo */}
+                    {Array.isArray(caseData.icdCodes.secondary) && (caseData.icdCodes.secondary as string[]).length > 0 && (
+                      <div>
+                        <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Mã kèm theo ({(caseData.icdCodes.secondary as string[]).length} mã):</span>
+                        <div className="mt-1 flex flex-wrap gap-2">
+                          {Array.from(new Set(caseData.icdCodes.secondary as string[])).map((icdCode: string, idx: number) => (
+                            <span 
+                              key={`badge-${icdCode}-${idx}`}
+                              className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700"
+                            >
+                              {icdCode}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {caseData.icdCodes && typeof caseData.icdCodes === 'object' && 'secondary' in caseData.icdCodes && Array.isArray(caseData.icdCodes.secondary) && (caseData.icdCodes.secondary as string[]).length > 0 && (
                 <div>
                   <p className="text-sm font-medium text-muted-foreground mb-1">Bệnh kèm theo</p>
                   <ul className="text-base list-disc list-inside">
-                    {caseData.diagnosisSecondary.map((diag: string, idx: number) => {
-                      const icdCodes = caseData.icdCodes as { secondary?: string[] } | null;
-                      const secondaryIcd = icdCodes?.secondary?.[idx];
+                    {/* Remove duplicate ICD codes before mapping */}
+                    {Array.from(new Set(caseData.icdCodes.secondary as string[])).map((icdCode: string, idx: number) => {
+                      // Map ICD codes to disease names
+                      const icdNameMap: Record<string, string> = {
+                        'N72': 'Viêm cổ tử cung',
+                        'B19': 'Viêm gan virus không xác định',
+                        'E78': 'Rối loạn chuyển hóa lipoprotein và tình trạng tăng lipid máu khác',
+                        'E14': 'Các thể loại đái tháo đường không xác định',
+                        'E07': 'Các rối loạn khác của tuyến giáp',
+                        'K21': 'Bệnh trào ngược dạ dày - thực quản',
+                        'M10': 'Gút (thống phong)',
+                        'M19': 'Thoái hóa khớp khác',
+                        'N05': 'Hội chứng viêm thận không đặc hiệu',
+                        'N20': 'Sỏi thận và niệu quản',
+                        'N64': 'Biến đổi khác ở vú',
+                        'G55.1*': 'Chèn ép rễ và đám rối thần kinh trong bệnh đĩa đệm cột sống',
+                        'G55.1': 'Chèn ép rễ và đám rối thần kinh trong bệnh đĩa đệm cột sống',
+                      };
+                      const diseaseName = icdNameMap[icdCode] || caseData.diagnosisSecondary?.[idx] || 'Chưa xác định';
                       return (
-                        <li key={idx}>
-                          {diag}
-                          {secondaryIcd && (
-                            <span className="ml-2 text-muted-foreground">({secondaryIcd})</span>
-                          )}
+                        <li key={`${icdCode}-${idx}`}>
+                          {diseaseName}
+                          <span className="ml-2 text-muted-foreground">({icdCode})</span>
                         </li>
                       );
                     })}
@@ -460,7 +545,6 @@ export default function CaseDetail() {
                     <TableRow>
                       <TableHead>Tên thuốc</TableHead>
                       <TableHead>Hoạt chất</TableHead>
-                      <TableHead>Trạng thái</TableHead>
                       <TableHead>Liều dùng</TableHead>
                       <TableHead>Tần suất</TableHead>
                       <TableHead>Đường dùng</TableHead>
@@ -489,23 +573,6 @@ export default function CaseDetail() {
                               </div>
                             ) : (
                               <span className="text-sm text-muted-foreground italic">-</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            {status === "active" && (
-                              <Badge variant="default" className="bg-green-600 hover:bg-green-700" data-testid={`badge-status-active-${med.id}`}>
-                                Đang dùng
-                              </Badge>
-                            )}
-                            {status === "stopped" && (
-                              <Badge variant="secondary" data-testid={`badge-status-stopped-${med.id}`}>
-                                Đã ngưng
-                              </Badge>
-                            )}
-                            {status === "unknown" && (
-                              <Badge variant="outline" data-testid={`badge-status-unknown-${med.id}`}>
-                                Không rõ
-                              </Badge>
                             )}
                           </TableCell>
                           <TableCell>
@@ -544,12 +611,17 @@ export default function CaseDetail() {
                                       </span>
                                     </div>
                                   )}
+                                  {med.estimatedDays && med.estimatedDays > 0 && (
+                                    <span className="text-xs text-blue-600 font-medium">
+                                      ({med.estimatedDays} ngày{med.durationIsEstimated ? ' - ước tính' : ''})
+                                    </span>
+                                  )}
                                   {!hasEndDate && hasStartDate && (
                                     <span className="text-xs text-green-600 italic">Đang sử dụng</span>
                                   )}
                                 </>
                               ) : (
-                                <span className="text-sm text-muted-foreground">Không có dữ liệu</span>
+                                <span className="text-sm text-muted-foreground">Chưa có dữ liệu</span>
                               )}
                             </div>
                           </TableCell>
@@ -569,6 +641,132 @@ export default function CaseDetail() {
           </Card>
         </TabsContent>
 
+
+        <TabsContent value="icd-check">
+          <Card>
+            <CardHeader>
+              <CardTitle>Kiểm tra mã ICD - BHYT</CardTitle>
+              <CardDescription>
+                Xác minh các thuốc BHYT có đúng mã ICD theo quy định hay không
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              {icdCheckLoading ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-8 h-8 animate-spin text-primary" />
+                </div>
+              ) : icdCheckData && icdCheckData.items && icdCheckData.items.length > 0 ? (
+                <>
+                  {/* Main Table */}
+                  <Table className="table-fixed w-full">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[25%] border-r">Tên thuốc</TableHead>
+                        <TableHead className="w-[25%] border-r">Mã ICD</TableHead>
+                        <TableHead className="w-[20%] border-r">Chỉ Định</TableHead>
+                        <TableHead className="w-[30%]">Chống Chỉ Định</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {icdCheckData.items
+                        .filter(item => item.isInsurance !== false)
+                        .map((item, idx) => (
+                          <TableRow key={idx}>
+                            {/* Tên thuốc */}
+                            <TableCell className="font-medium border-r">
+                              <div className="text-sm break-words">
+                                {item.drugName}
+                              </div>
+                            </TableCell>
+                            
+                            {/* Mã ICD */}
+                            <TableCell className="text-sm border-r">
+                              {item.requiredPatterns && item.requiredPatterns.length > 0 ? (
+                                <div className="break-words">
+                                  <span className="text-blue-700 font-mono text-xs">
+                                    {item.requiredPatterns.join(", ")}
+                                  </span>
+                                </div>
+                              ) : (
+                                <span className="text-muted-foreground italic text-xs">Chưa cấu hình</span>
+                              )}
+                            </TableCell>
+                            
+                            {/* Chỉ Định */}
+                            <TableCell className="border-r">
+                              {!item.requiredPatterns || item.requiredPatterns.length === 0 ? (
+                                <Badge variant="secondary" className="whitespace-nowrap">Chưa cấu hình</Badge>
+                              ) : item.icdValid ? (
+                                <Badge variant="default" className="bg-green-600 whitespace-nowrap">
+                                  Hợp lệ BHYT
+                                </Badge>
+                              ) : (
+                                <Badge variant="destructive" className="whitespace-nowrap">
+                                  Không hợp lệ BHYT
+                                </Badge>
+                              )}
+                            </TableCell>
+                            
+                            {/* Chống Chỉ Định */}
+                            <TableCell className="text-sm">
+                              {!item.contraindicationPatterns || item.contraindicationPatterns.length === 0 ? (
+                                <Badge variant="secondary" className="bg-gray-200 text-gray-600 whitespace-nowrap">
+                                  Chưa cấu hình
+                                </Badge>
+                              ) : item.hasContraindication ? (
+                                <div className="flex flex-col gap-1">
+                                  <Badge variant="destructive" className="gap-1 w-fit whitespace-nowrap">
+                                    <AlertTriangle className="w-3 h-3" />
+                                    Có ICD chống chỉ định
+                                  </Badge>
+                                  {item.contraindicationICD && (
+                                    <span className="text-red-700 text-xs font-medium break-words">
+                                      ICD: {item.contraindicationICD}
+                                    </span>
+                                  )}
+                                </div>
+                              ) : (
+                                <Badge variant="default" className="bg-green-600 hover:bg-green-700 whitespace-nowrap">
+                                  Không phát hiện ICD chống chỉ định
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                    </TableBody>
+                  </Table>
+
+                  {/* Patient ICD Info */}
+                  {icdCheckData.patientICDList.length > 0 && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-6">
+                      <p className="text-sm text-blue-900">
+                        <strong>Mã ICD của bệnh nhân:</strong> {icdCheckData.patientICDList.join(", ")}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Info Section */}
+                  <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 mt-4">
+                    <h4 className="font-semibold text-amber-900 mb-2 flex items-center gap-2">
+                      <AlertCircle className="w-4 h-4" />
+                      Lưu ý
+                    </h4>
+                    <ul className="text-sm text-amber-800 space-y-1 list-disc list-inside">
+                      <li>Thuốc BHYT cần có mã ICD phù hợp để tránh bị xuất toán</li>
+                      <li>Mã ICD dạng "K21.x" nghĩa là chấp nhận K21.0, K21.9, v.v.</li>
+                      <li>Cần cấu hình mã ICD cho thuốc ở phần "Danh mục thuốc"</li>
+                    </ul>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center py-12">
+                  <ClipboardCheck className="w-12 h-12 mx-auto text-muted-foreground mb-4" />
+                  <p className="text-muted-foreground">Không có dữ liệu kiểm tra</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="analysis">
           <Card>

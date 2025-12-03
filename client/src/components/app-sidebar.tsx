@@ -83,7 +83,7 @@ export function AppSidebar() {
           </div>
           <div>
             <h2 className="font-bold text-base bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">Cửa Đông Care+</h2>
-            <p className="text-xs font-medium text-muted-foreground">Trợ lý dược lâm sàng</p>
+            <p className="text-xs font-medium text-muted-foreground">Quản lý dữ liệu lâm sàng</p>
           </div>
         </div>
       </SidebarHeader>

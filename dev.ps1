@@ -34,4 +34,4 @@ Write-Host "✅ Environment: development" -ForegroundColor Green
 Write-Host "🌐 Server sẽ chạy tại: http://localhost:5000" -ForegroundColor Cyan
 Write-Host ""
 
-tsx server/index.ts
+npx tsx server/index.ts

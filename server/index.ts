@@ -37,6 +37,11 @@ app.use((req, res, next) => {
   res.on("finish", () => {
     const duration = Date.now() - start;
     if (path.startsWith("/api")) {
+      // Skip logging expected 404s for consultation-report (not yet created)
+      if (res.statusCode === 404 && path.includes("/consultation-report")) {
+        return;
+      }
+      
       let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
       if (capturedJsonResponse) {
         logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;

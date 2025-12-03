@@ -98,6 +98,9 @@ export const medications = pgTable("medications", {
   adjustedRoute: text("adjusted_route"),
   adjustmentReason: text("adjustment_reason"),
   
+  // Insurance & payment
+  isInsurance: boolean("is_insurance").default(true), // true = BHYT, false = viện phí/tự túc
+  
   // Timeline
   usageStartDate: timestamp("usage_start_date"),
   usageEndDate: timestamp("usage_end_date"),
@@ -134,6 +137,11 @@ export type MedicationWithStatus = Medication & {
   activeIngredient?: string;
   strength?: string;
   unit?: string;
+  icdValid?: boolean;           // BHYT compliance check
+  matchedICD?: string;          // Patient's ICD that matched drug's patterns
+  matchedPattern?: string;      // Drug's ICD pattern that matched
+  icdMessage?: string;          // User-friendly message
+  requiredPatterns?: string[];  // Drug's required ICD patterns for display
 };
 
 export const analyses = pgTable("analyses", {
@@ -281,6 +289,8 @@ export const drugFormulary = pgTable("drug_formulary", {
   unit: text("unit").notNull(),
   manufacturer: text("manufacturer"),
   notes: text("notes"),
+  icdPatterns: text("icd_patterns"), // Danh sách ICD pattern BHYT cho phép (comma-separated: K21.x,K25.x,K29.0)
+  contraindicationIcds: text("contraindication_icds"), // Danh sách ICD chống chỉ định (comma-separated: K50.x,K51.x)
   createdAt: timestamp("created_at").notNull().defaultNow(),
   updatedAt: timestamp("updated_at").notNull().defaultNow(),
 });

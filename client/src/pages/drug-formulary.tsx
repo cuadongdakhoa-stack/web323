@@ -32,6 +32,8 @@ interface DrugFormulary {
   unit: string;
   manufacturer?: string;
   notes?: string;
+  icdPatterns?: string; // Comma-separated ICD patterns (e.g., "K21.x,K25.x,K29.0")
+  contraindicationIcds?: string; // Comma-separated contraindication ICD patterns
   createdAt: string;
   updatedAt: string;
 }
@@ -51,6 +53,8 @@ export default function DrugFormularyPage() {
     unit: "",
     manufacturer: "",
     notes: "",
+    icdPatterns: "", // Comma-separated ICD patterns
+    contraindicationIcds: "", // Comma-separated contraindication ICD patterns
   });
 
   const { data: drugs = [], isLoading } = useQuery<DrugFormulary[]>({
@@ -107,6 +111,8 @@ export default function DrugFormularyPage() {
         unit: "",
         manufacturer: "",
         notes: "",
+        icdPatterns: "",
+        contraindicationIcds: "",
       });
     },
     onError: (error: any) => {
@@ -250,26 +256,56 @@ export default function DrugFormularyPage() {
               </div>
             ) : (
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="table-fixed w-full">
                   <TableHeader>
                     <TableRow>
-                      <TableHead>Tên thuốc</TableHead>
-                      <TableHead>Hoạt chất</TableHead>
-                      <TableHead>Hàm lượng</TableHead>
-                      <TableHead>Đơn vị</TableHead>
-                      <TableHead>Nhà sản xuất</TableHead>
-                      <TableHead className="text-right">Thao tác</TableHead>
+                      <TableHead className="w-[20%] border-r">Tên thuốc</TableHead>
+                      <TableHead className="w-[18%] border-r">Hoạt chất</TableHead>
+                      <TableHead className="w-[12%] border-r">Hàm lượng</TableHead>
+                      <TableHead className="w-[20%] border-r">Mã ICD chỉ định</TableHead>
+                      <TableHead className="w-[20%] border-r">Mã ICD chống chỉ định</TableHead>
+                      <TableHead className="w-[10%] text-right">Thao tác</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {drugs.map((drug) => (
                       <TableRow key={drug.id} data-testid={`row-drug-${drug.id}`}>
-                        <TableCell className="font-medium">{drug.tradeName}</TableCell>
-                        <TableCell>{drug.activeIngredient}</TableCell>
-                        <TableCell>{drug.strength}</TableCell>
-                        <TableCell>{drug.unit}</TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {drug.manufacturer || "-"}
+                        <TableCell className="font-medium border-r">
+                          <div className="text-sm break-words" title={drug.tradeName}>
+                            {drug.tradeName}
+                          </div>
+                        </TableCell>
+                        <TableCell className="border-r">
+                          <div className="text-sm break-words" title={drug.activeIngredient}>
+                            {drug.activeIngredient}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm border-r">
+                          <div className="break-words">
+                            {drug.strength} {drug.unit}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm border-r">
+                          {drug.icdPatterns ? (
+                            <div className="break-words">
+                              <span className="text-blue-700 font-mono text-xs">
+                                {drug.icdPatterns}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground italic text-xs">Chưa cấu hình</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-sm border-r">
+                          {drug.contraindicationIcds ? (
+                            <div className="break-words">
+                              <span className="text-red-700 font-mono text-xs">
+                                {drug.contraindicationIcds}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground italic text-xs">Chưa cấu hình</span>
+                          )}
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
@@ -413,6 +449,30 @@ export default function DrugFormularyPage() {
                 data-testid="input-notes"
               />
             </div>
+            <div>
+              <Label>Mã ICD chỉ định (BHYT)</Label>
+              <Input
+                value={newDrug.icdPatterns}
+                onChange={(e) => setNewDrug({ ...newDrug, icdPatterns: e.target.value })}
+                placeholder="VD: K21.x,K25.x,K29.0,B96.81"
+                data-testid="input-icd-patterns"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Danh sách mã ICD được BHYT cho phép (phân cách bằng dấu phẩy). Dùng .x cho nhóm (K21.x = K21.0, K21.9...)
+              </p>
+            </div>
+            <div>
+              <Label>Mã ICD chống chỉ định</Label>
+              <Input
+                value={newDrug.contraindicationIcds}
+                onChange={(e) => setNewDrug({ ...newDrug, contraindicationIcds: e.target.value })}
+                placeholder="VD: Z34,Z39.1,I50"
+                data-testid="input-contraindication-icds"
+              />
+              <p className="text-xs text-muted-foreground mt-1">
+                Danh sách mã ICD chống chỉ định cho thuốc này (phân cách bằng dấu phẩy)
+              </p>
+            </div>
           </div>
           <DialogFooter>
             <Button
@@ -501,6 +561,32 @@ export default function DrugFormularyPage() {
                   }
                   data-testid="input-edit-notes"
                 />
+              </div>
+              <div>
+                <Label>Mã ICD chỉ định (BHYT)</Label>
+                <Input
+                  value={editingDrug.icdPatterns || ""}
+                  onChange={(e) =>
+                    setEditingDrug({ ...editingDrug, icdPatterns: e.target.value })
+                  }
+                  data-testid="input-edit-icd-patterns"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Danh sách mã ICD được BHYT cho phép (phân cách bằng dấu phẩy)
+                </p>
+              </div>
+              <div>
+                <Label>Mã ICD chống chỉ định</Label>
+                <Input
+                  value={editingDrug.contraindicationIcds || ""}
+                  onChange={(e) =>
+                    setEditingDrug({ ...editingDrug, contraindicationIcds: e.target.value })
+                  }
+                  data-testid="input-edit-contraindication-icds"
+                />
+                <p className="text-xs text-muted-foreground mt-1">
+                  Danh sách mã ICD chống chỉ định cho thuốc này (phân cách bằng dấu phẩy)
+                </p>
               </div>
             </div>
           )}

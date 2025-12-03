@@ -41,6 +41,19 @@ yarn-debug.log*
 test-*
 *-output.*
 *-test.*
+*.json
+!package.json
+!package-lock.json
+!tsconfig.json
+!components.json
+
+# Python (not used anymore)
+*.py
+*.pyc
+__pycache__/
+requirements.txt
+venv/
+env/
 
 # Documentation (keep only main README)
 DEPLOY*.md

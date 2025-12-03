@@ -74,6 +74,7 @@ const INITIAL_FORM_DATA = {
   admissionDate: new Date().toISOString().split('T')[0],
   diagnosisMain: "",
   diagnosisMainIcd: "",
+  secondaryIcds: "",
   medicalHistory: "",
   allergies: "",
   status: "draft",
@@ -292,12 +293,33 @@ export default function NewCase() {
 
         // Extract fileGroup tag (added during extraction)
         const fileGroup = data._fileGroup;
+        
+        // 🔍 DEBUG: Log extracted ICD data
+        console.log('📋 Extracted data from fileGroup:', fileGroup);
+        console.log('📋 ICD Codes:', data.icdCodes);
+        console.log('📋 Main ICD:', data.icdCodes?.main);
+        console.log('📋 Secondary ICDs:', data.icdCodes?.secondary);
 
         setFormData((prev: typeof formData) => {
           const smartMerge = (newVal: any, oldVal: any) => {
             if (newVal !== null && newVal !== undefined && newVal !== '') return newVal;
             return oldVal;
           };
+
+          // Parse secondary ICDs từ data.icdCodes.secondary
+          let secondaryIcdsString = prev.secondaryIcds;
+          if (data.icdCodes?.secondary && Array.isArray(data.icdCodes.secondary) && data.icdCodes.secondary.length > 0) {
+            // Merge với existing secondary ICDs
+            const existingIcds = prev.secondaryIcds 
+              ? prev.secondaryIcds.split(/[;,]/).map((s: string) => s.trim().toUpperCase()).filter((s: string) => s)
+              : [];
+            const newIcds = data.icdCodes.secondary.map((s: string) => s.trim().toUpperCase());
+            const allIcds = Array.from(new Set([...existingIcds, ...newIcds]));
+            secondaryIcdsString = allIcds.join(';');
+            console.log('✅ Updated secondaryIcds field:', secondaryIcdsString);
+          } else {
+            console.log('⚠️ No secondary ICDs found in extraction data');
+          }
 
           return {
             ...prev,
@@ -309,6 +331,7 @@ export default function NewCase() {
             admissionDate: smartMerge(data.admissionDate, prev.admissionDate),
             diagnosisMain: smartMerge(data.diagnosisMain || data.diagnosis, prev.diagnosisMain),
             diagnosisMainIcd: smartMerge(data.icdCodes?.main, prev.diagnosisMainIcd),
+            secondaryIcds: secondaryIcdsString,
             medicalHistory: smartMerge(data.medicalHistory, prev.medicalHistory),
             allergies: smartMerge(data.allergies, prev.allergies),
             creatinine: (data.labResults?.creatinine !== null && data.labResults?.creatinine !== undefined) ? smartMerge(data.labResults.creatinine.toString(), prev.creatinine) : prev.creatinine,
@@ -508,17 +531,31 @@ export default function NewCase() {
   };
 
   const handleAnalyzeAll = async () => {
-    // Phân tích lần lượt: Bệnh án → Cận lâm sàng → Tờ điều trị
+    // Phân tích lần lượt dựa theo caseType
     const analysisQueue = [];
     
-    if (selectedFiles.length > 0) {
-      analysisQueue.push({ files: selectedFiles, fileGroup: 'admin', label: 'Bệnh án' });
-    }
-    if (selectedFilesLab.length > 0) {
-      analysisQueue.push({ files: selectedFilesLab, fileGroup: 'lab', label: 'Cận lâm sàng' });
-    }
-    if (selectedFilesPrescription.length > 0) {
-      analysisQueue.push({ files: selectedFilesPrescription, fileGroup: 'prescription', label: 'Tờ điều trị' });
+    if (formData.caseType === "inpatient") {
+      // NỘI TRÚ: Bệnh án → Tờ điều trị → Cận lâm sàng
+      if (selectedFiles.length > 0) {
+        analysisQueue.push({ files: selectedFiles, fileGroup: 'admin', label: 'Bệnh án' });
+      }
+      if (selectedFilesPrescription.length > 0) {
+        analysisQueue.push({ files: selectedFilesPrescription, fileGroup: 'prescription', label: 'Tờ điều trị' });
+      }
+      if (selectedFilesLab.length > 0) {
+        analysisQueue.push({ files: selectedFilesLab, fileGroup: 'lab', label: 'Cận lâm sàng' });
+      }
+    } else if (formData.caseType === "outpatient") {
+      // NGOẠI TRÚ: Đơn thuốc → Bảng kê → Xét nghiệm
+      if (selectedFiles.length > 0) {
+        analysisQueue.push({ files: selectedFiles, fileGroup: 'prescription', label: 'Đơn thuốc' });
+      }
+      if (selectedFilesPrescription.length > 0) {
+        analysisQueue.push({ files: selectedFilesPrescription, fileGroup: 'prescription', label: 'Bảng kê' });
+      }
+      if (selectedFilesLab.length > 0) {
+        analysisQueue.push({ files: selectedFilesLab, fileGroup: 'lab', label: 'Xét nghiệm' });
+      }
     }
 
     if (analysisQueue.length === 0) {
@@ -563,12 +600,28 @@ export default function NewCase() {
 
   const createCaseMutation = useMutation({
     mutationFn: async (data: { caseData: any; medications: Medication[]; secondaryDiagnoses: SecondaryDiagnosis[] }) => {
+      // Parse secondary ICDs from input field (support ; or , separators)
+      const secondaryIcdsFromInput = data.caseData.secondaryIcds
+        ? data.caseData.secondaryIcds
+            .split(/[;,]/)
+            .map((code: string) => code.trim().toUpperCase())
+            .filter((code: string) => code.length > 0)
+        : [];
+      
+      // Get ICDs from secondary diagnoses list
+      const secondaryIcdsFromList = data.secondaryDiagnoses
+        .filter(d => d.icd)
+        .map(d => d.icd.trim().toUpperCase());
+      
+      // Combine and deduplicate
+      const allSecondaryIcds = Array.from(new Set([...secondaryIcdsFromInput, ...secondaryIcdsFromList]));
+      
       const icdCodes = {
         main: data.caseData.diagnosisMainIcd || "",
-        secondary: data.secondaryDiagnoses.filter(d => d.icd).map(d => d.icd),
+        secondary: allSecondaryIcds,
       };
 
-      const { diagnosisMainIcd, ...caseDataWithoutUIFields } = data.caseData;
+      const { diagnosisMainIcd, secondaryIcds, ...caseDataWithoutUIFields } = data.caseData;
 
       const caseResponse = await apiRequest("/api/cases", {
         method: "POST",
@@ -973,6 +1026,20 @@ export default function NewCase() {
                       <option key={icd.code} value={icd.code}>{icd.code} - {icd.name}</option>
                     ))}
                   </datalist>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="secondaryIcds">Mã bệnh kèm theo</Label>
+                  <Input
+                    id="secondaryIcds"
+                    data-testid="input-secondary-icds"
+                    value={formData.secondaryIcds}
+                    onChange={(e) => handleChange("secondaryIcds", e.target.value)}
+                    placeholder="Ví dụ: B19;E07;E14;E78;K21;M10;M19 hoặc B19, E07, E14, E78"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    Nhập nhiều mã ICD cách nhau bởi dấu chấm phẩy (;) hoặc dấu phẩy (,)
+                  </p>
                 </div>
 
                 <div className="space-y-2">

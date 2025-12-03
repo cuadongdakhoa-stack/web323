@@ -167,7 +167,7 @@ export function FloatingChatbot() {
                   <div>
                     <CardTitle className="text-lg">Trợ lý ảo Cửa Đông Care</CardTitle>
                     <CardDescription className="text-xs">
-                      Trợ lý dược lâm sàng
+                      Quản lý dữ liệu lâm sàng
                     </CardDescription>
                   </div>
                 </div>

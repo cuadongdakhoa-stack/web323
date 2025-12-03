@@ -67,7 +67,7 @@ export default function Login() {
             Cửa Đông Care+ Pharma
           </CardTitle>
           <CardDescription className="text-base text-muted-foreground">
-            Hệ thống trợ lý dược lâm sàng chuyên nghiệp
+            Hệ thống Quản lý dữ liệu lâm sàng chuyên nghiệp
           </CardDescription>
         </CardHeader>
         <CardContent className="pb-8">

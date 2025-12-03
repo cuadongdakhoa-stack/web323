@@ -1,5 +1,14 @@
 import { z } from "zod";
 import { storage } from "./storage";
+import { callDirectDeepSeek } from "./directDeepseek";
+import {
+  OUTPATIENT_PRESCRIPTION_PROMPT,
+  OUTPATIENT_BILLING_PROMPT,
+  OUTPATIENT_LAB_PROMPT,
+  BENH_AN_PROMPT,
+  TO_DIEU_TRI_PROMPT,
+  CAN_LAM_SANG_PROMPT
+} from "./prompts";
 
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
 const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
@@ -59,559 +68,6 @@ const evidenceItemSchema = z.object({
   citationCount: z.number().nullable().optional(),
 });
 
-// ============================================
-// SPECIALIZED PROMPTS FOR EACH DOCUMENT TYPE
-// ============================================
-
-const BENH_AN_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
-
-Trích xuất từ BỆNH ÁN / HỒ SƠ VÀO VIỆN (INPATIENT - NỘI TRÚ). CHỈ TRÍCH XUẤT CÁC TRƯỜNG SAU:
-
-THÔNG TIN BỆNH NHÂN:
-- patientName: Họ tên bệnh nhân
-- patientAge: Tuổi (số)
-- patientGender: Giới tính ("Nam" hoặc "Nữ")
-- patientWeight: Cân nặng (kg)
-- patientHeight: Chiều cao (cm)
-
-THÔNG TIN NHẬP VIỆN:
-- admissionDate: Ngày nhập viện (YYYY-MM-DD)
-
-CHẨN ĐOÁN:
-- diagnosisMain: Chẩn đoán CHÍNH (mục 15)
-- diagnosisSecondary: Mảng các bệnh kèm theo (mục 17)
-- icdCodes: { main: "mã ICD chính (mục 16)", secondary: ["mã ICD bệnh kèm (mục 18)"] }
-- medicalHistory: Tiền sử bệnh (tăng huyết áp, đái tháo đường, suy tim, suy thận, bệnh gan, ung thư, phẫu thuật...)
-- allergies: Dị ứng thuốc
-
-⚠️ TRÍCH XUẤT LINH HOẠT:
-- labResults: Nếu có creatinine trong bệnh án thì trích xuất, không thì null
-- medications: Nếu có đơn thuốc (ngoại trú/nội trú) trong bệnh án thì trích xuất, không thì null
-
-QUY TẮC TRÍCH XUẤT CHẨN ĐOÁN (CỰC KỲ QUAN TRỌNG):
-
-1. NGUỒN DỮ LIỆU (TUYỆT ĐỐI KHÔNG HALLUCINATE):
-   - CHỈ trích xuất bệnh được GHI RÕ trong tài liệu
-   - Tìm mục (15) hoặc "Chẩn đoán xác định" → diagnosisMain
-   - Tìm mục (17) hoặc "Bệnh kèm theo" hoặc "Chẩn đoán ra viện" → diagnosisSecondary
-   - KHÔNG ĐƯỢC tự suy luận hay thêm bệnh dựa vào triệu chứng
-
-2. DE-DUPLICATE DIAGNOSES (Loại bỏ trùng lặp):
-   - Chuẩn hóa: lowercase + bỏ dấu câu
-   - So sánh: nếu 2 bệnh giống nhau → chỉ giữ 1
-   
-   VÍ DỤ:
-   - Input: ["Thoái hóa khớp gối", "THOÁI HÓA KHỚP GỐI", "Thoái hóa khớp gối."]
-   - Output: ["Thoái hóa khớp gối"] (chỉ giữ 1 lần)
-
-3. MÃ ICD MAPPING (CONTROLLED TABLE):
-   - Tìm mục (16) hoặc "Mã bệnh" → icdCodes.main
-   - Tìm mục (18) hoặc "Mã bệnh kèm theo" → icdCodes.secondary
-   
-   BẢNG ICD-10 THAM KHẢO (Chỉ dùng nếu tài liệu KHÔNG CÓ mã ICD):
-   - Tăng huyết áp nguyên phát → I10
-   - Đái tháo đường type 2 → E11
-   - Thoái hóa khớp gối → M17 (KHÔNG PHẢI M10!)
-   - Suy tim mạn → I50
-   - Suy thận mạn → N18
-   - Rối loạn lipid máu → E78
-   - Bệnh phổi tắc nghẽn mạn tính (COPD) → J44
-   - Loét dạ dày/tá tràng → K25/K26
-   - Xơ gan → K74
-   
-   ⚠️ QUY TẮC VÀNG:
-   - Nếu tài liệu ĐÃ CÓ mã ICD → dùng mã đó (ưu tiên tuyệt đối)
-   - Nếu tài liệu KHÔNG CÓ mã ICD + bệnh KHÔNG CÓ trong bảng trên → để "" (chuỗi rỗng)
-   - TUYỆT ĐỐI KHÔNG đoán mã ICD nếu không chắc chắn
-
-4. TÁCH BỆNH KÈM THEO:
-   - TÁCH TỪNG BỆNH theo dấu ; hoặc ,
-   - Loại bỏ trùng lặp (sau khi chuẩn hóa)
-   - Số lượng diagnosisSecondary PHẢI BẰNG số lượng icdCodes.secondary
-
-VÍ DỤ RESPONSE:
-{
-  "patientName": "Nguyễn Văn A",
-  "patientAge": 65,
-  "patientGender": "Nam",
-  "patientWeight": 60,
-  "patientHeight": 165,
-  "admissionDate": "2024-10-23",
-  "diagnosisMain": "Đái tháo đường type 2",
-  "diagnosisSecondary": ["Tăng huyết áp", "Rối loạn lipid máu"],
-  "icdCodes": { "main": "E11", "secondary": ["I10", "E78"] },
-  "medicalHistory": "Tăng huyết áp 10 năm, đái tháo đường 5 năm",
-  "allergies": "Không",
-  "labResults": null,
-  "medications": null
-}
-
-⚠️ QUY TẮC QUAN TRỌNG:
-- CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
-- Không có thông tin → null
-- clinicalStatus chỉ chọn: "stable", "moderate", hoặc "critical"
-- priorityLevel chỉ chọn: "urgent", "routine", hoặc "follow-up"
-- referralSource chỉ chọn: "emergency", "outpatient", "transfer", hoặc "self"`;
-
-const OUTPATIENT_PRESCRIPTION_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
-
-Trích xuất từ ĐƠN THUỐC NGOẠI TRÚ (OUTPATIENT PRESCRIPTION). ĐƠN NGOẠI TRÚ RẤT QUAN TRỌNG VỀ:
-
-THÔNG TIN BỆNH NHÂN (bắt buộc cho đơn ngoại trú):
-- patientName: Họ tên bệnh nhân
-- patientAge: Tuổi (số)
-- patientGender: Giới tính ("Nam" hoặc "Nữ")
-- patientWeight: Cân nặng (kg) - nếu có
-- patientHeight: Chiều cao (cm) - nếu có
-
-THÔNG TIN KHÁM BỆNH:
-- admissionDate: Ngày khám/Ngày kê đơn (YYYY-MM-DD) - thường ở header đơn
-
-CHẨN ĐOÁN:
-- diagnosisMain: Chẩn đoán chính (từ mục "Chẩn đoán" hoặc "Diagnosis")
-- diagnosisSecondary: Bệnh kèm theo (nếu có)
-- icdCodes: Mã ICD (nếu có ghi trong đơn)
-- medicalHistory: Tiền sử bệnh (nếu có ghi)
-- allergies: Dị ứng thuốc (nếu có ghi)
-
-THUỐC (medications):
-- Trích xuất TẤT CẢ thuốc trong đơn
-- Format: [{ drugName, dose, frequency, route, usageStartDate, usageEndDate }]
-- usageStartDate = usageEndDate = ngày khám (đơn ngoại trú chỉ 1 ngày)
-- Số ngày dùng: thường ghi "x 10 ngày", "x 30 ngày" → cộng vào ngày khám để có usageEndDate
-
-VÍ DỤ ĐƠN NGOẠI TRÚ:
-Header:
-- Ngày: 25/11/2024
-- BN: Trần Thị C, 45 tuổi, Nữ
-- Lý do khám: Ho, sốt 3 ngày
-
-Body:
-1. Amoxicillin 500mg - 1v x 2 lần/ngày x 7 ngày - Uống
-2. Paracetamol 500mg - 1v x 3 lần/ngày x 5 ngày - Uống
-
-Footer:
-Bác sĩ: BS. Lê Văn D
-[Chữ ký]
-
-OUTPUT JSON:
-{
-  "patientName": "Trần Thị C",
-  "patientAge": 45,
-  "patientGender": "Nữ",
-  "admissionDate": "2024-11-25",
-  "diagnosisMain": null,
-  "diagnosisSecondary": null,
-  "icdCodes": null,
-  "medicalHistory": null,
-  "allergies": null,
-  "labResults": null,
-  "medications": [
-    {
-      "drugName": "Amoxicillin 500mg",
-      "dose": "1 viên",
-      "frequency": "2 lần/ngày",
-      "route": "Uống",
-      "form": "viên",
-      "dosePerAdmin": 1,
-      "frequencyPerDay": 2,
-      "usageStartDate": "2024-11-25",
-      "usageEndDate": "2024-12-01"
-    },
-    {
-      "drugName": "Paracetamol 500mg",
-      "dose": "1 viên",
-      "frequency": "3 lần/ngày",
-      "route": "Uống",
-      "form": "viên",
-      "dosePerAdmin": 1,
-      "frequencyPerDay": 3,
-      "usageStartDate": "2024-11-25",
-      "usageEndDate": "2024-11-29"
-    }
-  ]
-}
-
-⚠️ MEDICATIONS SCHEMA CHI TIẾT:
-- drugName: Tên thuốc đầy đủ (bao gồm hàm lượng)
-- dose: Liều dùng nguyên văn ("1 viên", "2 viên", "1 gói")
-- frequency: Tần suất nguyên văn ("2 lần/ngày", "sáng tối")
-- route: Đường dùng ("Uống", "Tiêm", "Bôi", "Nhỏ mắt", "Ngậm")
-- form: Dạng thuốc ("viên", "gói", "ống", "lọ", "bình xịt", "dung dịch", "viên nang") ⭐ MỚI
-- dosePerAdmin: Số lượng mỗi lần (parse từ dose: "1 viên" → 1, "2 viên" → 2) ⭐ MỚI
-- frequencyPerDay: Số lần/ngày (parse từ frequency: "2 lần/ngày" → 2, "sáng chiều tối" → 3) ⭐ MỚI
-- usageStartDate: Ngày bắt đầu dùng
-- usageEndDate: Ngày kết thúc = startDate + số ngày dùng
-
-⚠️ QUY TẮC QUAN TRỌNG:
-- form, dosePerAdmin, frequencyPerDay: parse từ dose và frequency
-- Nếu không parse được → null (KHÔNG đoán)
-- usageEndDate = admissionDate + số ngày dùng`;
-
-const CAN_LAM_SANG_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
-
-Trích xuất từ KẾT QUẢ CẬN LÂM SÀNG (Xét nghiệm máu, Hóa sinh, Nước tiểu, Vi sinh).
-
-TRÍCH XUẤT TOÀN BỘ XÉT NGHIỆM:
-
-⚠️ SCHEMA MỚI - labs[] array (thay vì chỉ creatinine):
-
-labs: [
-  {
-    "testGroup": "Hematology" | "Biochemistry" | "Urinalysis" | "Microbiology" | "Other",
-    "testName": "Tên xét nghiệm (WBC, Hb, Creatinine, AST, ALT, Glucose, ...)",
-    "resultValue": "Giá trị (số hoặc text)",
-    "unit": "Đơn vị (g/L, 10^9/L, mg/dL, U/L, ...)",
-    "referenceRange": "Khoảng tham chiếu nếu có (VD: 3.5-10.0)",
-    "abnormalFlag": "HIGH" | "LOW" | "NORMAL" | null,
-    "collectedAt": "Ngày/giờ lấy mẫu nếu có (YYYY-MM-DD HH:mm)"
-  }
-]
-
-⚠️ PHÂN LOẠI testGroup:
-- "Hematology": WBC, RBC, Hb, Hct, PLT, MCV, MCH, MCHC, Bạch cầu đa nhân, Lympho...
-- "Biochemistry": Glucose, Creatinine, Urea, AST, ALT, Bilirubin, Protein, Albumin, Cholesterol, Triglyceride, HDL, LDL...
-- "Urinalysis": pH nước tiểu, Protein niệu, Glucose niệu, Hồng cầu, Bạch cầu, Trụ...
-- "Microbiology": Vi khuẩn, Kháng sinh đồ
-- "Other": Các xét nghiệm khác
-
-⚠️ HƯỚNG DẪN abnormalFlag:
-- So sánh resultValue với referenceRange
-- Nếu cao hơn → "HIGH"
-- Nếu thấp hơn → "LOW"
-- Trong khoảng bình thường → "NORMAL"
-- Không có reference range hoặc không rõ → null
-
-VÍ DỤ:
-
-JSON Output:
-{
-  "labs": [
-    {
-      "testGroup": "Hematology",
-      "testName": "WBC",
-      "resultValue": "8.5",
-      "unit": "10^9/L",
-      "referenceRange": "4.0-10.0",
-      "abnormalFlag": "NORMAL",
-      "collectedAt": null
-    },
-    {
-      "testGroup": "Hematology",
-      "testName": "Hb",
-      "resultValue": "120",
-      "unit": "g/L",
-      "referenceRange": "130-170",
-      "abnormalFlag": "LOW",
-      "collectedAt": null
-    },
-    {
-      "testGroup": "Hematology",
-      "testName": "PLT",
-      "resultValue": "250",
-      "unit": "10^9/L",
-      "referenceRange": "150-400",
-      "abnormalFlag": "NORMAL",
-      "collectedAt": null
-    },
-    {
-      "testGroup": "Biochemistry",
-      "testName": "Glucose",
-      "resultValue": "5.8",
-      "unit": "mmol/L",
-      "referenceRange": "3.9-6.1",
-      "abnormalFlag": "NORMAL",
-      "collectedAt": null
-    },
-    {
-      "testGroup": "Biochemistry",
-      "testName": "Creatinine",
-      "resultValue": "110",
-      "unit": "µmol/L",
-      "referenceRange": "60-110",
-      "abnormalFlag": "NORMAL",
-      "collectedAt": null
-    },
-    {
-      "testGroup": "Biochemistry",
-      "testName": "AST",
-      "resultValue": "45",
-      "unit": "U/L",
-      "referenceRange": "10-40",
-      "abnormalFlag": "HIGH",
-      "collectedAt": null
-    }
-  ],
-  "labResults": {
-    "creatinine": 110,
-    "creatinineUnit": "micromol/L"
-  }
-}
-
-⚠️ BACKWARD COMPATIBILITY:
-- Vẫn phải điền labResults (legacy) với creatinine nếu tìm thấy
-- Đồng thời điền labs[] (new) với TẤT CẢ xét nghiệm
-
-⚠️ TRÁNH SAI LẦM:
-- Không nhầm GIÁ TIỀN trong bảng kê với KẾT QUẢ xét nghiệm
-- resultValue là GIÁ TRỊ, không phải giá tiền
-- Nếu không có kết quả xét nghiệm → labs: []
-
-JSON RESPONSE FORMAT:
-{
-  "patientName": null,
-  "patientAge": null,
-  "patientGender": null,
-  "patientWeight": null,
-  "patientHeight": null,
-  "admissionDate": null,
-  "diagnosisMain": null,
-  "diagnosisSecondary": null,
-  "icdCodes": null,
-  "medicalHistory": null,
-  "allergies": null,
-  "labs": [],
-  "labResults": null,
-  "medications": null
-}`;
-
-const TO_DIEU_TRI_PROMPT = `Bạn là chuyên gia trích xuất dữ liệu y tế. NGẮN GỌN, CHÍNH XÁC, CHỈ JSON. KHÔNG giải thích. KHÔNG markdown.
-
-Trích xuất từ TỜ ĐIỀU TRỊ / ĐƠN THUỐC (cả NGOẠI TRÚ và NỘI TRÚ). CHỈ TRÍCH XUẤT DANH SÁCH THUỐC:
-
-⚠️ NHẬN DIỆN LOẠI ĐƠN (TỰ ĐỘNG):
-
-📄 ĐƠN NGOẠI TRÚ (OUTPATIENT):
-- Đặc điểm: Mã hồ sơ dạng "TN.xxx", bảng kê chi phí BHYT/Tự túc
-- Format: Bảng grid đơn giản, không timeline theo ngày
-- Thuốc: Chủ yếu uống, 10-40 ngày
-- Ngày: Thường chỉ có 1 ngày khám (usageStartDate = usageEndDate = ngày khám)
-
-🏥 ĐƠN NỘI TRÚ (INPATIENT):
-- Đặc điểm: Số hồ sơ thuần (không có TN.), tường thuật theo ngày
-- Format: Mỗi ngày 1 section (23/10/2025, 24/10/2025...), có giờ tiêm cụ thể (9h, 10h, 15h)
-- Thuốc: Có cả tiêm (inj), truyền (NaCl, Ringer's, Glucose), uống
-- Vật tư: Kim tiêm, bơm tiêm, bộ truyền, dây thở oxy → PHẢI LỌC BỎ
-- Timeline: Thuốc thay đổi theo tiến triển bệnh (ngày 23-27: A, ngày 28+: B)
-
-⚠️ XỬ LÝ TIMELINE:
-- **NGOẠI TRÚ**: usageStartDate = usageEndDate = ngày khám (hoặc để null nếu không có)
-- **NỘI TRÚ**: usageStartDate = ngày SỚM NHẤT xuất hiện, usageEndDate = ngày MUỘN NHẤT xuất hiện
-
-⚠️ QUY TẮC 1: KHÔNG RƠI MẤT THUỐC (CỰC KỲ QUAN TRỌNG)
-
-PHẢI trích xuất TẤT CẢ các dòng thuốc hợp lệ. CHỈ BỎ QUA:
-
-DANH SÁCH LOẠI TRỪ (BLACKLIST - VẬT TƯ Y TẾ):
-⚠️ **CRITICAL**: TUYỆT ĐỐI KHÔNG trích xuất các vật tư sau vào medications:
-- **Dụng cụ tiêm**: Bơm tiêm, Kim tiêm (18G, 21G, 23G...), Bộ truyền dịch, Dây truyền
-- **Vật tư hỗ trợ**: Dây thở oxy, Ống thông (catheter), Găng tay, Khẩu trang, Băng, Gạc
-- **Dịch vụ**: Phí khám, Phí giường, Phí xét nghiệm, Phí thủ thuật
-- **Vật tư tiêu hao khác**: Không phải thuốc/dung dịch điều trị
-
-✅ **VÍ DỤ BỊ LOẠI TRỪ (ĐƠN NỘI TRÚ)**:
-- "Kim tiêm 21G" → BỎ QUA
-- "Bơm tiêm 5ml" → BỎ QUA
-- "Bộ truyền dịch" → BỎ QUA
-- "Dây thở oxy" → BỎ QUA
-
-✅ CHẤP NHẬN TẤT CẢ LOẠI THUỐC:
-- **Thuốc uống**: Viên, viên nang, viên nén, dạng bột, siro
-- **Thuốc tiêm** (có đuôi "inj" hoặc ghi "injection"): Atileucine inj 500mg, Cerebrolysin inj, Vitamin B1 inj...
-- **Dung dịch truyền**: NaCl 0.9%, Glucose 5%, Ringer's Lactate, Lipofundin, Aminoplasmal, Plasmalyte...
-- **Thuốc khác**: Nhỏ mắt, bôi da, xịt, hít (evohaler, inhaler)
-- **Thuốc Đông y**: Hoa Đà tái tạo hoàn, Bổ can, An thần...
-- **TPBVSK**: Glucosamine, Omega-3, Vitamin...
-
-⚠️ **LƯU Ý THUỐC TIÊM/TRUYỀN** (INPATIENT):
-- Thường có giờ cụ thể: "Tiêm tĩnh mạch chậm 10h, 15h" → ghi vào notes hoặc frequency
-- Tốc độ truyền: "Truyền 40-50 giọt/phút, 8h-20h" → ghi vào notes
-- VÍ DỤ: Atileucine inj 500mg → drugName: "Atileucine inj 500mg", dose: "500mg/5ml x2 Ống", frequency: "Sáng 1 Ống; chiều 1 Ống", route: "Tiêm tĩnh mạch", notes: "Tiêm chậm 10h, 15h"
-
-⚠️ QUY TẮC 2: NGÀY BẮT ĐẦU / KẾT THÚC - THUẬT TOÁN MIN-MAX (CỰC KỲ QUAN TRỌNG)
-
-Với mỗi thuốc (theo drugName + có thể kèm dose nếu khác hàm lượng):
-
-BƯỚC 1: Quét TOÀN BỘ tờ điều trị (tất cả các trang, tất cả các ngày, tất cả các dòng)
-BƯỚC 2: Thu thập TẤT CẢ ngày mà thuốc đó xuất hiện (dù liều có thay đổi)
-BƯỚC 3: Sắp xếp ngày tăng dần
-BƯỚC 4: 
-  - usageStartDate = ngày SỚM NHẤT trong danh sách
-  - usageEndDate = ngày MUỘN NHẤT trong danh sách
-
-⚠️ TUYỆT ĐỐI KHÔNG:
-- Cắt ngắn về ngày 25 nếu còn 26, 27, 28...
-- Cắt về ngày 01 nếu còn 03, 04, 05...
-- Bỏ qua các ngày ở giữa (kể cả khi có ngày không dùng)
-
-VÍ DỤ ĐÚNG:
-1. Thuốc A xuất hiện: 23/10, 24/10, 25/10, 27/10, 03/11, 04/11
-   → startDate: "2024-10-23", endDate: "2024-11-04" ✅
-
-2. Lovastatin xuất hiện trang 1-7 (ngày 23, 24, 25, 26, 27/10), BIẾN MẤT từ trang 8
-   → startDate: "2024-10-23", endDate: "2024-10-27" ✅
-
-3. Doxycilin: ngày 27, 28, 29, 30, 31/10, 01, 02, 03/11
-   → startDate: "2024-10-27", endDate: "2024-11-03" ✅
-
-VÍ DỤ SAI:
-❌ Thuốc xuất hiện 23-27/10 và 03-04/11 → endDate: "2024-10-27" (SAI! phải là 04/11)
-❌ Cắt về "2024-10-25" khi thực tế còn 26, 27, 28
-
-⚠️ QUY TẮC 3: TẦN SUẤT / LIỀU THAY ĐỔI THEO NGÀY
-
-Nếu thuốc có >1 mẫu tần suất/liều trong suốt quá trình điều trị:
-
-PHƯƠNG ÁN A (TỐI THIỂU - BẮT BUỘC):
-- Chọn mẫu CAO NHẤT làm frequency 
-  VD: Có "Sáng 1 viên" và "Sáng 1 viên; tối 1 viên" → chọn "Sáng 1 viên; tối 1 viên"
-- Thêm trường: "variableDosing": true hoặc "notes": "Liều thay đổi theo ngày, xem lại tờ điều trị"
-
-PHƯƠNG ÁN B (TỐT HƠN - NẾU LÀM ĐƯỢC):
-- Lưu thêm mảng "dosingSchedule": [
-    { "date": "27/10/2024", "frequency": "Sáng 1 viên; tối 1 viên", "dose": "100mg" },
-    { "date": "03/11/2024", "frequency": "Sáng 1 viên", "dose": "100mg" }
-  ]
-
-⚠️ TUYỆT ĐỐI KHÔNG:
-- Chọn mẫu THẤP NHẤT rồi gắn cho toàn bộ
-- "Ép" về 1 mẫu duy nhất khi thực tế có nhiều mẫu
-
-VÍ DỤ:
-- Doxycyclin: 27-02/11 dùng 2 lần/ngày, 03-04/11 dùng 1 lần/ngày
-  → frequency: "Sáng 1 viên; tối 1 viên" (mẫu cao nhất)
-  → variableDosing: true
-
-⚠️ QUY TẮC 4: TỰ TÚC (SELF-PURCHASED / OUTPATIENT MEDICATION)
-
-Nếu bất kỳ ngày nào thuốc được đánh dấu "tự túc" / "TT" / "self-purchased" / "BN tự mua":
-- Thêm trường: "selfSupplied": true
-
-VÍ DỤ:
-- "Omega-3 (tự túc)" → selfSupplied: true
-- "Glucosamine - TT" → selfSupplied: true
-
-Áp dụng cho MỌI THUỐC, không hard-code bệnh nhân.
-
-⚠️ QUY TẮC 5: ĐƯỜNG DÙNG (route)
-
-- "HÍT" / "EVOHALER" / "INHALER" → route: "Hít"
-- "UỐNG" / "ORAL" / "PO" / "Viên" / "Viên nang" → route: "Uống"
-- "TIÊM TM" / "IV" / "Tiêm tĩnh mạch" → route: "Tiêm tĩnh mạch"
-- "TIÊM BẮP" / "IM" → route: "Tiêm bắp"
-- "TRUYỀN" / "Infusion" → route: "Truyền tĩnh mạch"
-- "BÔI" / "Topical" → route: "Bôi da"
-- "NHỎ MẮT" → route: "Nhỏ mắt"
-
-JSON FORMAT:
-{
-  "medications": [
-    {
-      "drugName": "tên thuốc chính xác (bao gồm cả Ringer's, Flexsa, Hoa Đà...)",
-      "dose": "liều (ví dụ: 100mg, 2 nhát, 500ml)",
-      "frequency": "tần suất CAO NHẤT (ví dụ: Sáng 1 viên; tối 1 viên)",
-      "route": "đường dùng (Uống, Hít, Tiêm tĩnh mạch, Truyền tĩnh mạch...)",
-      "form": "dạng thuốc (viên, gói, ống, lọ, bình xịt, dung dịch)" ⭐ MỚI,
-      "dosePerAdmin": số lượng mỗi lần (1, 2, 0.5) ⭐ MỚI,
-      "frequencyPerDay": số lần/ngày (1, 2, 3, 4) ⭐ MỚI,
-      "adminTimes": ["08:00", "14:00", "20:00"] hoặc null ⭐ MỚI (giờ dùng cụ thể nếu có),
-      "medicationStatus": "ACTIVE" | "STOPPED" | "CHANGED" | null ⭐ MỚI,
-      "orderSheetNumber": "Tờ số 1" | "Tờ số 2" | null ⭐ MỚI (nếu có ghi số tờ),
-      "usageStartDate": "YYYY-MM-DD (ngày SỚM NHẤT xuất hiện)",
-      "usageEndDate": "YYYY-MM-DD (ngày MUỘN NHẤT xuất hiện)",
-      "variableDosing": true/false (true nếu liều thay đổi),
-      "selfSupplied": true/false (true nếu có đánh dấu tự túc),
-      "notes": "Ghi chú (nếu có thông tin đặc biệt)"
-    }
-  ]
-}
-
-⚠️ HƯỚNG DẪN CÁC TRƯỜNG MỚI:
-
-1. **form** - Dạng thuốc:
-   - Parse từ dose hoặc drugName: "viên", "gói", "ống", "lọ", "bình xịt", "dung dịch", "viên nang"
-   - VD: "100mg x 2 viên" → form: "viên"
-   - VD: "500ml dung dịch" → form: "dung dịch"
-
-2. **dosePerAdmin** - Số lượng mỗi lần:
-   - Parse từ dose: "1 viên" → 1, "2 viên" → 2, "0.5 viên" → 0.5
-   - Parse từ frequency nếu có: "Sáng 2 viên; tối 1 viên" → dùng số cao nhất (2)
-
-3. **frequencyPerDay** - Số lần/ngày:
-   - Parse từ frequency: "2 lần/ngày" → 2
-   - "Sáng 1 viên; tối 1 viên" → 2
-   - "Sáng chiều tối" → 3
-   - "Mỗi 8 giờ" → 3
-
-4. **adminTimes** - Giờ dùng thuốc (inpatient):
-   - Nếu có ghi giờ cụ thể: "Tiêm 8h, 14h, 20h" → ["08:00", "14:00", "20:00"]
-   - "Sáng" → ["08:00"], "Chiều" → ["14:00"], "Tối" → ["20:00"]
-   - "Sáng chiều tối" → ["08:00", "14:00", "20:00"]
-   - Không có giờ cụ thể → null
-
-5. **medicationStatus**:
-   - "ACTIVE": Thuốc đang dùng (xuất hiện ở trang cuối hoặc không có dấu hiệu ngừng)
-   - "STOPPED": Thuốc đã ngừng (biến mất ở giữa chừng, có ghi "ngừng", "stop")
-   - "CHANGED": Thuốc thay đổi liều/tần suất (có variableDosing: true)
-   - null: Không rõ
-
-6. **orderSheetNumber**:
-   - Nếu tờ điều trị có ghi "Tờ số 1", "Tờ số 2", "Tờ 3" → extract
-   - Giúp tracking thuốc theo thời gian
-   - Không có → null
-
-⚠️ MEDICATION SWITCHING (quan trọng):
-- Nếu thuốc A biến mất và thuốc B xuất hiện → 2 thuốc riêng
-- Lovastatin (23-27/10) NGƯNG → Atorvastatin (28/10+) BẮT ĐẦU
-  → 2 dòng riêng, không gộp
-
-⚠️ SAI LẦM THƯỜNG GẶP CẦN TRÁNH:
-❌ Bỏ sót Ringer's, Lipofundin, Flexsa, Hoa Đà tái tạo hoàn
-❌ Cắt ngắn endDate khi thực tế thuốc còn xuất hiện thêm nhiều ngày
-❌ Chọn "Sáng 1 viên" khi có cả "Sáng 1 viên; tối 1 viên"
-❌ Không đánh dấu variableDosing khi liều thay đổi
-❌ Không đánh dấu selfSupplied khi có ghi "tự túc"
-
-✅ CHECKLIST TRƯỚC KHI TRẢ KẾT QUẢ:
-1. Đã quét HẾT tất cả các trang tờ điều trị chưa?
-2. Mỗi thuốc đã lấy ngày MIN và MAX chưa?
-3. Có thuốc nào bị bỏ sót (kiểm tra số lượng)?
-4. Liều thay đổi đã đánh dấu variableDosing chưa?
-5. Tự túc đã đánh dấu selfSupplied chưa?
-
-⚠️ CÁC TRƯỜNG SAU ĐỂ null (KHÔNG TRÍCH XUẤT TỪ TỜ ĐIỀU TRỊ):
-- patientName, patientAge, patientGender, patientWeight, patientHeight: null
-- admissionDate, diagnosisMain, diagnosisSecondary, icdCodes: null
-- medicalHistory, allergies: null
-- labResults: null
-
-JSON RESPONSE FORMAT:
-{
-  "patientName": null,
-  "patientAge": null,
-  "patientGender": null,
-  "patientWeight": null,
-  "patientHeight": null,
-  "admissionDate": null,
-  "diagnosisMain": null,
-  "diagnosisSecondary": null,
-  "icdCodes": null,
-  "medicalHistory": null,
-  "allergies": null,
-  "labResults": null,
-  "medications": [
-    {
-      "drugName": "Aspirin tab DWP 75mg",
-      "dose": "1 viên",
-      "frequency": "Sáng 1 viên",
-      "route": "Uống",
-      "usageStartDate": "2024-10-23",
-      "usageEndDate": "2024-11-04",
-      "variableDosing": false,
-      "selfSupplied": false
-    }
-  ]
-}`;
 
 const clinicalAnalysisSchema = z.object({
   renalAssessment: z.string(),
@@ -628,11 +84,9 @@ const clinicalAnalysisSchema = z.object({
 });
 
 const MODELS = {
-  GPT4: "openai/gpt-4o",  // GPT-4 Optimized for better accuracy
+  GPT4: "openai/gpt-4o",
+  DEEPSEEK_CHAT: "deepseek/deepseek-chat",
   PERPLEXITY: "perplexity/sonar-pro",
-  // Fallback options:
-  // DEEPSEEK: "deepseek/deepseek-chat",
-  // GPT35: "openai/gpt-3.5-turbo",
 };
 
 interface ChatMessage {
@@ -946,10 +400,12 @@ Lưu ý:
 - KHÔNG dùng markdown (**, *, #) trong nội dung
 - drugDrugInteractionGroups: CHỈ điền nếu phân tích ban đầu có nhóm thuốc theo thời gian`;
 
-  const finalAnalysisRaw = await callGPT4(
+  const finalAnalysisRaw = await callDirectDeepSeek(
     deepseekVerificationSystemPrompt,
     deepseekVerificationUserPrompt,
-    0.5
+    0.5,
+    8000,
+    true
   );
 
   let finalAnalysisJSON: any;
@@ -1044,8 +500,17 @@ NGUYÊN TẮC (PHẢI TUÂN THỦ):
 1. Chức năng thận & gan:
    - Nếu có CrCl tính theo Cockcroft–Gault → gọi đúng "CrCl (Cockcroft–Gault)", KHÔNG gọi nhầm là eGFR.
    - Nếu có eGFR → ghi rõ "eGFR".
-   - Phân loại suy thận (bình thường/nhẹ/trung bình/nặng/giai đoạn cuối) và CHỈ liên hệ với thuốc thải qua thận.
-   - Gan: chỉ nhắc khi có men gan tăng rõ, bệnh gan nền, hoặc dùng thuốc độc gan.
+   - Phân loại suy thận theo ngưỡng:
+     • CrCl ≥ 60 mL/min: BÌNH THƯỜNG → "Chức năng thận bình thường, không cần điều chỉnh liều"
+     • CrCl 30-59 mL/min: SUY THẬN NHẸ-TRUNG BÌNH → Xem xét giảm liều thuốc thải qua thận
+     • CrCl 15-29 mL/min: SUY THẬN NẶNG → Bắt buộc giảm liều hoặc tránh thuốc độc thận
+     • CrCl < 15 mL/min: SUY THẬN GIAI ĐOẠN CUỐI → Tham khảo chuyên khoa thận
+   - CHỈ nhắc "theo dõi thận" khi: CrCl < 60 HOẶC dùng thuốc độc thận (aminoglycosides, vancomycin, NSAIDs dài ngày, ACEi/ARB)
+   - Gan: CHỈ nhắc khi:
+     • Men gan tăng (AST/ALT > 2x giới hạn bình thường)
+     • Bệnh gan nền (xơ gan, viêm gan B/C)
+     • Dùng thuốc độc gan: Paracetamol >3g/ngày, statin, isoniazid, methotrexate, amiodarone, azathioprine
+     • KHÔNG nhắc gan nếu chỉ có: kháng sinh thông thường, thuốc tim mạch, PPI
 
 2. Tương tác thuốc–thuốc & thuốc–bệnh:
    - CHỈ nêu tương tác có ý nghĩa lâm sàng theo kiến thức dược lý chuẩn; nếu chỉ là suy đoán yếu → BỎ QUA.
@@ -1054,25 +519,43 @@ NGUYÊN TẮC (PHẢI TUÂN THỦ):
      • Clopidogrel + thuốc chẹn beta (metoprolol/Betaloc)
      • Spironolactone + thuốc chẹn beta
      • Statin + thuốc chẹn beta
+     • Kháng sinh thông thường (Amoxicillin, Cephalosporin) với hầu hết thuốc tim mạch
      • Các câu mơ hồ "thuốc A + B có thể tăng tác dụng phụ" mà không có cơ chế rõ
    - 2 statin (lovastatin + atorvastatin):
      • CHỈ cảnh báo khi THỜI GIAN DÙNG TRÙNG NHAU
      • Nếu statin A ngừng rồi mới bắt đầu statin B → coi là ĐỔI THUỐC, KHÔNG cảnh báo
    - PPI + clopidogrel:
-     • Omeprazole/esomeprazole: có dữ liệu làm giảm hoạt tính → có thể cảnh báo
-     • PPI khác (pantoprazole, lansoprazole/Scolanzo): bằng chứng yếu → ghi "bằng chứng hạn chế, có thể tiếp tục, theo dõi lâm sàng"
+     • Omeprazole/esomeprazole: có dữ liệu làm giảm hoạt tính → lưu ý nhẹ "có thể theo dõi đáp ứng lâm sàng"
+     • PPI khác (pantoprazole, lansoprazole): bằng chứng yếu → "bằng chứng hạn chế, có thể tiếp tục"
+   - NSAID + thuốc khác:
+     • NSAID + (Aspirin/Clopidogrel/Warfarin/DOAC): TĂNG nguy cơ xuất huyết → cảnh báo QUAN TRỌNG
+     • NSAID + (ACEi/ARB/Diuretic): tăng nguy cơ độc thận, giảm hiệu quả hạ áp → cảnh báo
+     • NSAID + Corticosteroid: tăng nguy cơ loét dạ dày → lưu ý PPI bảo vệ
    - Thuốc đông y/thảo dược/TPBVSK: nếu không có dữ liệu chắc → ghi "bằng chứng hạn chế, chưa rõ nguy cơ"
 
 3. Điều chỉnh liều:
    - Xem xét: tuổi, cân nặng, suy thận, suy gan, suy tim.
-   - ĐƯỢC đề xuất chỉnh liều khi: thuốc thải qua thận + suy thận (CrCl < 60), đặc biệt < 30; thuốc khoảng điều trị hẹp.
+   - ĐƯỢC đề xuất chỉnh liều khi:
+     • CrCl < 60 mL/min + thuốc thải qua thận (đặc biệt khi CrCl < 30)
+     • Thuốc khoảng điều trị hẹp (digoxin, aminoglycosides, vancomycin, lithium)
+     • Người cao tuổi (≥75 tuổi) + thuốc gây buồn ngủ/ngã
    - KHÔNG tự động giảm liều nếu: thuốc chuyển hóa qua gan và suy thận nhẹ–trung bình mà không cần chỉnh.
-   - Spironolactone/lợi tiểu giữ kali: ở suy thận trung bình → ưu tiên "THEO DÕI kali & creatinin"; chỉ nêu "giảm/ngừng" nếu kali tăng, suy thận nặng (CrCl < 30), hoặc nhiều thuốc tăng kali.
+   - Spironolactone/lợi tiểu giữ kali:
+     • CrCl ≥ 60: Dùng bình thường, theo dõi kali định kỳ
+     • CrCl 30-59 + không dùng ACEi/ARB: "Có thể tiếp tục, theo dõi kali + SCr mỗi 1-2 tuần"
+     • CrCl 30-59 + dùng ACEi/ARB hoặc kali tăng: "Cân nhắc giảm liều hoặc ngừng, theo dõi kali sát"
+     • CrCl < 30: "Tránh dùng hoặc giảm liều xuống 12.5-25mg, theo dõi kali hàng tuần"
    - Nêu phạm vi: "liều tham khảo trong suy thận mức này là…; cần đối chiếu phác đồ bệnh viện".
 
 4. Theo dõi:
-   - Đề xuất CỤ THỂ: creatinin/eGFR, kali, men gan, dấu hiệu chảy máu, Hb…
-   - Tránh chung chung "theo dõi tác dụng phụ".
+   - Đề xuất CỤ THỂ và ĐỊNH LƯỢNG:
+     • Chức năng thận: "Theo dõi SCr + BUN mỗi [tuần/2 tuần/tháng]" (CHỈ khi CrCl < 60 hoặc dùng thuốc độc thận)
+     • Điện giải: "Theo dõi Kali + Na + Mg mỗi [tuần/2 tuần]" (khi dùng lợi tiểu, ACEi/ARB, digoxin)
+     • Chức năng gan: "Theo dõi AST/ALT/bilirubin mỗi [2-4 tuần]" (CHỈ khi dùng thuốc độc gan)
+     • Đông máu: "Theo dõi PT/INR, dấu hiệu chảy máu" (khi dùng chống đông/kháng tiểu cầu)
+     • Lâm sàng: "Quan sát triệu chứng [cụ thể]: đau bụng, tiêu phân đen, khó thở..."
+   - KHÔNG dùng câu chung chung: "theo dõi tác dụng phụ" hoặc "theo dõi chức năng gan" khi không cần thiết
+   - Ưu tiên: Xét nghiệm quan trọng nhất + tần suất cụ thể
 
 5. Trình bày (LUÔN theo 5 mục):
    1) Đánh giá chức năng cơ quan liên quan
@@ -1219,8 +702,10 @@ ${medicationSegments.length > 0
 
 YÊU CẦU PHÂN TÍCH (CẤU TRÚC BẮT BUỘC):
 1. ĐÁNH GIÁ CHỨC NĂNG CƠ QUAN:
-   - Thận: phân loại suy thận, ảnh hưởng thuốc thải qua thận
-   - Gan: nếu có tăng men gan hoặc bệnh gan nền
+   - Thận: phân loại theo ngưỡng CrCl (≥60/30-59/15-29/<15), ảnh hưởng thuốc thải qua thận
+   - CHỈ nhắc "cần theo dõi" nếu CrCl < 60 hoặc dùng thuốc độc thận
+   - Nếu CrCl ≥ 60: "Chức năng thận bình thường (CrCl X mL/min), không cần điều chỉnh liều"
+   - Gan: CHỈ nhắc nếu có men gan tăng hoặc dùng thuốc độc gan (paracetamol >3g/ngày, statin, isoniazid...)
    - Tim-mạch: nếu có suy tim, rung nhĩ, tăng huyết áp...
    - CHỈ nhắc cơ quan liên quan đến thuốc đang dùng
 
@@ -1238,8 +723,14 @@ YÊU CẦU PHÂN TÍCH (CẤU TRÚC BẮT BUỘC):
    - KHÔNG tự động giảm liều thuốc chuyển hóa gan khi chỉ suy thận nhẹ
 
 4. THEO DÕI CẦN THIẾT:
-   - Xét nghiệm CỤ THỂ: SCr, Kali, men gan, INR, đường huyết...
-   - Triệu chứng lâm sàng cần quan sát
+   - Xét nghiệm CỤ THỂ + TẦN SUẤT: SCr + BUN mỗi [X tuần], Kali mỗi [Y tuần], AST/ALT...
+   - CHỈ đề xuất theo dõi khi THỰC SỰ CẦN THIẾT:
+     • SCr/BUN: Khi CrCl < 60 hoặc dùng thuốc độc thận (NSAIDs, ACEi/ARB, aminoglycosides...)
+     • Kali: Khi dùng lợi tiểu, ACEi/ARB, spironolactone
+     • Men gan: Khi dùng thuốc độc gan (statin, paracetamol >3g/ngày, isoniazid...)
+     • INR: Khi dùng warfarin
+   - KHÔNG đề xuất "theo dõi chung chung" nếu không có lý do cụ thể
+   - Triệu chứng lâm sàng cần quan sát (đau bụng, tiêu phân đen, khó thở...)
 
 5. CẢNH BÁO & GHI CHÚ:
    - Nguy cơ cao nhất cần lưu ý
@@ -1247,26 +738,33 @@ YÊU CẦU PHÂN TÍCH (CẤU TRÚC BẮT BUỘC):
 
 TRẢ VỀ JSON (KHÔNG có markdown, KHÔNG giải thích thêm):
 {
-  "renalAssessment": "phân loại suy thận + ảnh hưởng thuốc (VD: CrCl 41 mL/min - suy thận mức độ trung bình. Cần chỉnh liều thuốc thải qua thận: ...)",
+  "renalAssessment": "CrCl [X] mL/min - [Bình thường/Suy thận nhẹ/trung bình/nặng]. [Không cần điều chỉnh liều / Cần chỉnh liều: ...]",
   "drugDrugInteractions": [
-    "Plavix (Clopidogrel) với Scolanzo (Esomeprazole): Có thể giảm hoạt tính chống tiểu cầu, cân nhắc theo dõi",
-    "Aspirin (Acetylsalicylic acid) với Betadine (Povidone-iodine): Tương tác..."
+    "Plavix (Clopidogrel) với Aspirin (Acetylsalicylic acid): Tăng nguy cơ xuất huyết tiêu hóa. Khuyến nghị: Cân nhắc PPI bảo vệ, theo dõi Hb + dấu hiệu chảy máu.",
+    "Arcoxia (Etoricoxib) với Plavix (Clopidogrel): NSAID + kháng tiểu cầu tăng nguy cơ xuất huyết. Khuyến nghị: Dùng liều NSAID thấp nhất, thời gian ngắn, có PPI bảo vệ."
   ],
   "drugDrugInteractionGroups": [
     {
       "rangeLabel": "${medicationSegments[0]?.rangeLabel || 'Toàn bộ đợt điều trị'}",
       "interactions": [
-        "Thuốc A (Hoạt chất A) với Thuốc B (Hoạt chất B): mô tả tương tác"
+        "Thuốc A (Hoạt chất A) với Thuốc B (Hoạt chất B): mô tả tương tác + khuyến nghị cụ thể"
       ]
     }
   ],
-  "drugDiseaseInteractions": ["tương tác thuốc-bệnh"],
-  "doseAdjustments": ["điều chỉnh liều cụ thể với phạm vi"],
-  "monitoring": ["theo dõi cụ thể"],
-  "warnings": ["cảnh báo quan trọng"]
+  "drugDiseaseInteractions": ["NSAID (Etoricoxib) với suy thận: tăng nguy cơ suy giảm chức năng thận. Khuyến nghị: Dùng liều thấp, thời gian ngắn, theo dõi SCr."],
+  "doseAdjustments": ["Thuốc X: Liều hiện tại Y mg, khuyến nghị giảm xuống Z mg do [lý do cụ thể + tham chiếu]"],
+  "monitoring": [
+    "Theo dõi SCr + BUN mỗi 2 tuần (do CrCl < 60 + dùng NSAID)",
+    "Theo dõi Kali mỗi tuần (do dùng spironolactone + ACEi)",
+    "Quan sát: đau bụng, tiêu phân đen, nôn máu (nguy cơ xuất huyết tiêu hóa)"
+  ],
+  "warnings": [
+    "Nguy cơ cao xuất huyết tiêu hóa: Plavix + Aspirin + NSAID. Cần PPI bảo vệ + theo dõi sát.",
+    "NSAID (Etoricoxib) dùng dài ngày: tăng nguy cơ biến cố tim mạch + suy giảm chức năng thận."
+  ]
 }`;
 
-  const rawAnalysis = await callGPT4(systemPrompt, userPrompt);
+  const rawAnalysis = await callDirectDeepSeek(systemPrompt, userPrompt, 0.3, 8000, true);
   
   let initialAnalysis: any;
   try {
@@ -1444,7 +942,7 @@ LƯU Ý:
 - patientInfo.diagnosisMain: Chẩn đoán chính + mã ICD (nếu có)
 - patientInfo.diagnosisSecondary: Mảng các chẩn đoán phụ + mã ICD`;
 
-  const rawResult = await callGPT4(systemPrompt, userPrompt, 0.2);
+  const rawResult = await callDirectDeepSeek(systemPrompt, userPrompt, 0.2, 4000, true);
   
   try {
     let jsonString = rawResult.trim();
@@ -1548,7 +1046,7 @@ ${topDiagnoses.length > 0 ? `- Chẩn đoán phổ biến: ${topDiagnoses.slice(
 ${topMedications.length > 0 ? `- Thuốc hay dùng: ${topMedsFormatted}` : ''}`;
   }
   
-  const systemPrompt = `Em là "Trợ lý ảo Cửa Đông Care" - trợ lý dược lâm sàng chuyên nghiệp của Bệnh viện Đa khoa Cửa Đông, TP Vinh, Nghệ An.
+  const systemPrompt = `Em là "Trợ lý ảo Cửa Đông Care" - chuyên viên Quản lý dữ liệu lâm sàng chuyên nghiệp của Bệnh viện Đa khoa Cửa Đông, TP Vinh, Nghệ An.
 
 PHONG CÁCH TRẢ LỜI (quan trọng - như nhân viên thật sự):
 - Xưng "em", gọi người dùng là "anh/chị/bác sĩ/dược sĩ" (tùy ngữ cảnh)
@@ -1623,7 +1121,7 @@ ${context.caseData.allergies ? `⚠️ Dị ứng: ${context.caseData.allergies}
 
   messages.push({ role: "user", content: userPrompt });
 
-  return callOpenRouter(MODELS.GPT4, messages, 0.4);
+  return callOpenRouter(MODELS.DEEPSEEK_CHAT, messages, 0.4);
 }
 
 // Fallback comprehensive prompt (for backward compatibility - used when fileGroup is not specified)
@@ -1647,7 +1145,7 @@ TRÍCH XUẤT TẤT CẢ CÁC TRƯỜNG:
 export async function extractDataFromDocument(
   textContent: string,
   fileType: "pdf" | "docx",
-  fileGroup?: string,  // "admin", "lab", or "prescription"
+  fileGroup?: string,  // "admin", "lab", "prescription", "billing", or "lab_tests"
   caseType?: string    // NEW: "inpatient" or "outpatient"
 ): Promise<any> {
   // Select specialized prompt based on fileGroup AND caseType
@@ -1656,9 +1154,15 @@ export async function extractDataFromDocument(
   if (fileGroup === "admin") {
     // Admin documents (medical records) - use BENH_AN_PROMPT for inpatient
     userPromptTemplate = BENH_AN_PROMPT;
-  } else if (fileGroup === "lab") {
+  } else if (fileGroup === "lab" || fileGroup === "lab_tests") {
     // Lab results - same for both inpatient and outpatient
-    userPromptTemplate = CAN_LAM_SANG_PROMPT;
+    // Support both "lab" (legacy) and "lab_tests" (new frontend)
+    userPromptTemplate = fileGroup === "lab_tests" && caseType === "outpatient" 
+      ? OUTPATIENT_LAB_PROMPT 
+      : CAN_LAM_SANG_PROMPT;
+  } else if (fileGroup === "billing") {
+    // Billing/Invoice documents - outpatient only
+    userPromptTemplate = OUTPATIENT_BILLING_PROMPT;
   } else if (fileGroup === "prescription") {
     // Prescription - different prompts for inpatient vs outpatient
     if (caseType === "outpatient") {
@@ -1682,7 +1186,9 @@ ${textContent}
 ⚠️ QUY TẮC:
 - CHỈ lấy dữ liệu CÓ SẴN - KHÔNG đoán
 - Không có thông tin → null
-- ĐỌC KỸ TOÀN BỘ TÀI LIỆU
+- ĐỌC KỸ TOÀN BỘ TÀI LIỆU - QUÉT 2 LẦN ĐỂ ĐẢM BẢO KHÔNG BỎ SÓT THUỐC
+- ⭐⭐⭐ CỰC KỲ QUAN TRỌNG: PHẢI TRÍCH XUẤT TẤT CẢ THUỐC (mọi trang, mọi ngày, mọi tờ)
+- ⭐⭐⭐ SAU KHI TRÍCH XUẤT: ĐẾM LẠI SỐ LƯỢNG THUỐC, ĐẢM BẢO KHÔNG TRÙNG LẶP
 
 JSON format:
 {
@@ -1704,7 +1210,10 @@ JSON format:
 
 CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
 
-  const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);  // Temperature thấp = chính xác hơn
+  // Use DeepSeek V3.2-Exp for extraction (cheaper, JSON mode)
+  const maxTokens = Math.min(8000, Math.ceil(textContent.length / 2));
+  const deepseekResult = await callDirectDeepSeek(systemPrompt, userPrompt, 0.1, maxTokens, true);
+  const rawResult = deepseekResult.content;
   
   try {
     const cleanedResult = rawResult.trim()
@@ -1749,6 +1258,37 @@ CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
       }
     }
     
+    // ⭐⭐⭐ MEDICATION COUNT VALIDATION - Ensure no medications are missed
+    if (parsed.medications && Array.isArray(parsed.medications)) {
+      const medCount = parsed.medications.length;
+      console.log(`[Medication Count] Extracted ${medCount} medications`);
+      
+      // Warning thresholds based on document type
+      if (fileGroup === "prescription") {
+        if (caseType === "inpatient" && medCount < 5) {
+          console.warn(`[WARNING] Inpatient treatment sheet has only ${medCount} medications. Typical range: 8-25. Please verify all medications were extracted.`);
+        } else if (caseType === "outpatient" && medCount < 2) {
+          console.warn(`[WARNING] Outpatient prescription has only ${medCount} medications. Typical range: 3-12. Please verify all medications were extracted.`);
+        }
+      }
+      
+      // Remove duplicate medications (same drugName)
+      const uniqueMeds = new Map();
+      parsed.medications.forEach((med: any) => {
+        const key = med.drugName.toLowerCase().trim();
+        if (!uniqueMeds.has(key)) {
+          uniqueMeds.set(key, med);
+        } else {
+          console.warn(`[Duplicate Medication] Removed duplicate: ${med.drugName}`);
+        }
+      });
+      parsed.medications = Array.from(uniqueMeds.values());
+      
+      if (parsed.medications.length < medCount) {
+        console.log(`[Deduplication] Reduced from ${medCount} to ${parsed.medications.length} unique medications`);
+      }
+    }
+    
     const validated = extractedDataSchema.safeParse(parsed);
     
     if (!validated.success) {
@@ -1789,7 +1329,7 @@ Trả về JSON (QUAN TRỌNG: CHỈ JSON, không thêm text khác):
 }`;
 
   try {
-    const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);
+    const rawResult = await callDirectDeepSeek(systemPrompt, userPrompt, 0.1, 2000, true);
     const cleanedResult = rawResult.trim()
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
@@ -1859,7 +1399,10 @@ YÊU CẦU:
 LƯU Ý: tradeName và activeIngredient là BẮT BUỘC, các trường khác có thể null nếu không có.`;
 
   try {
-    const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);
+    // Use DeepSeek V3.2-Exp for drug data extraction (cheaper, JSON mode)
+    const maxTokens = Math.min(8000, 4000);
+    const deepseekResult = await callDirectDeepSeek(systemPrompt, userPrompt, 0.1, maxTokens, true);
+    const rawResult = deepseekResult.content;
     const cleanedResult = rawResult.trim()
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')

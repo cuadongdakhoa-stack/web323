@@ -386,7 +386,40 @@ export class PostgresStorage implements IStorage {
 
   async createDrugsBatch(drugs: InsertDrugFormulary[]): Promise<DrugFormulary[]> {
     if (drugs.length === 0) return [];
-    const result = await db.insert(drugFormulary).values(drugs).returning();
+    
+    // ⭐ DEDUPLICATION: Check for existing drugs to avoid duplicates
+    const result: DrugFormulary[] = [];
+    const skipped: string[] = [];
+    
+    for (const drug of drugs) {
+      // Check if drug already exists (same tradeName + activeIngredient + strength)
+      const existing = await db.select()
+        .from(drugFormulary)
+        .where(
+          and(
+            eq(drugFormulary.tradeName, drug.tradeName),
+            eq(drugFormulary.activeIngredient, drug.activeIngredient),
+            eq(drugFormulary.strength, drug.strength)
+          )
+        )
+        .limit(1);
+      
+      if (existing.length > 0) {
+        // Drug already exists, skip it
+        skipped.push(drug.tradeName);
+        console.log(`[Deduplication] Skipped duplicate drug: ${drug.tradeName} ${drug.strength}`);
+        continue;
+      }
+      
+      // Insert new drug
+      const inserted = await db.insert(drugFormulary).values(drug).returning();
+      result.push(inserted[0]);
+    }
+    
+    if (skipped.length > 0) {
+      console.log(`[Deduplication] Skipped ${skipped.length} duplicate drugs out of ${drugs.length} total`);
+    }
+    
     return result;
   }
 
@@ -418,6 +451,22 @@ export class PostgresStorage implements IStorage {
   }
 
   async createReferenceDocument(doc: InsertReferenceDocument): Promise<ReferenceDocument> {
+    // ⭐ DEDUPLICATION: Check if file with same name already exists in same category
+    const existing = await db.select()
+      .from(referenceDocuments)
+      .where(
+        and(
+          eq(referenceDocuments.fileName, doc.fileName),
+          eq(referenceDocuments.category, doc.category)
+        )
+      )
+      .limit(1);
+    
+    if (existing.length > 0) {
+      console.log(`[Deduplication] File already exists: ${doc.fileName} in category ${doc.category}`);
+      throw new Error(`Tài liệu "${doc.fileName}" đã tồn tại trong danh mục "${doc.category}". Vui lòng xóa tài liệu cũ trước khi upload lại.`);
+    }
+    
     const result = await db.insert(referenceDocuments).values(doc).returning();
     return result[0];
   }

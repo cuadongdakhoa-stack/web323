@@ -40,6 +40,9 @@ import {
 } from "./openrouter";
 import { generatePDF, generateDOCX } from "./reportExport";
 import { calculateEGFR, extractCreatinine } from "./egfrCalculator";
+import { calculateMedicationDuration, calculateMedicationStatus } from "./medicationDuration";
+import { mapDiagnosisToICD, mapDiagnosesArrayToICD } from "./icd10-mapping";
+import { isDrugCoveredByICD, checkContraindication, parseICDPatterns, buildIcdSummaryText, deduplicateICDs, type ICDCode, type CheckedPrescriptionItem } from "./icdChecker";
 import multer from "multer";
 import mammoth from "mammoth";
 import officeParser from "officeparser";
@@ -332,6 +335,84 @@ export async function registerRoutes(app: Express): Promise<Server> {
     return enrichedMedications;
   }
 
+  // Helper function: Calculate medication duration and status
+  async function applyMedicationDuration(medications: any[]): Promise<any[]> {
+    if (!medications || medications.length === 0) return medications;
+
+    return medications.map(med => {
+      // Skip if no start date
+      if (!med.usageStartDate) return med;
+
+      // If already has endDate and it's different from startDate, keep it
+      if (med.usageEndDate && med.usageEndDate !== med.usageStartDate) {
+        const status = calculateMedicationStatus(med.usageStartDate, med.usageEndDate);
+        return {
+          ...med,
+          medicationStatus: status
+        };
+      }
+
+      // Calculate duration from quantity (use prescribedDose and prescribedFrequency)
+      const duration = calculateMedicationDuration(
+        med.quantity || med.dosePerAdmin || null,
+        med.dose || med.prescribedDose || null,
+        med.frequency || med.prescribedFrequency || null,
+        med.usageStartDate
+      );
+
+      // Calculate status
+      const status = calculateMedicationStatus(duration.usageStartDate, duration.usageEndDate);
+
+      return {
+        ...med,
+        usageEndDate: duration.usageEndDate,
+        estimatedDays: duration.estimatedDays,
+        durationIsEstimated: duration.isEstimated,
+        medicationStatus: status
+      };
+    });
+  }
+
+  // Helper function: Apply ICD-10 mapping to diagnoses
+  function applyICDMapping(caseData: any): any {
+    if (!caseData) return caseData;
+
+    // Map main diagnosis (chỉ khi chưa có main ICD)
+    if (caseData.diagnosisMain && (!caseData.icdCodes || !caseData.icdCodes.main)) {
+      const mainICD = mapDiagnosisToICD(caseData.diagnosisMain);
+      if (mainICD) {
+        caseData.icdCodes = caseData.icdCodes || {};
+        caseData.icdCodes.main = mainICD;
+      }
+    }
+
+    // Map secondary diagnoses (MERGE với ICDs đã có từ AI extraction)
+    if (caseData.diagnosisSecondary && Array.isArray(caseData.diagnosisSecondary)) {
+      const mappedICDs = mapDiagnosesArrayToICD(caseData.diagnosisSecondary);
+      
+      if (mappedICDs.length > 0) {
+        caseData.icdCodes = caseData.icdCodes || {};
+        
+        // MERGE: Kết hợp ICDs từ AI extraction và mapping
+        const existingICDs = (caseData.icdCodes.secondary && Array.isArray(caseData.icdCodes.secondary)) 
+          ? caseData.icdCodes.secondary 
+          : [];
+        
+        // Deduplicate và merge
+        const allICDs = [...existingICDs, ...mappedICDs];
+        caseData.icdCodes.secondary = Array.from(new Set(allICDs.map(icd => icd.toUpperCase())));
+        
+        console.log('[ICD Mapping] Merged secondary ICDs:', {
+          fromAI: existingICDs.length,
+          fromMapping: mappedICDs.length,
+          total: caseData.icdCodes.secondary.length
+        });
+      }
+    }
+
+    return caseData;
+  }
+
   // Multer config for case documents (PDF, DOC, PPT, images)
   const upload = multer({
     storage: multer.memoryStorage(),
@@ -413,9 +494,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const pageText = textData.items.map((item: any) => item.str).join(' ');
               textContent += pageText + '\n';
             }
-          } catch (pdfError) {
+            
+            // If extracted text is too short, it might be a scan/image
+            if (textContent.trim().length < 50) {
+              console.warn(`[PDF] Low text content from ${file.originalname} (${textContent.length} chars). File might be scanned.`);
+              textContent = `[PDF: ${file.originalname}]\nCảnh báo: File có thể là ảnh scan hoặc không có text layer.\n\n${textContent}`;
+            }
+          } catch (pdfError: any) {
             console.error('[PDF Parse Error]', pdfError);
-            return res.status(500).json({ message: `Không thể đọc file PDF: ${file.originalname}` });
+            // Instead of failing, send minimal info to AI
+            textContent = `[PDF: ${file.originalname}]\nLỗi trích xuất text: ${pdfError.message}\nKích thước file: ${file.size} bytes`;
           }
           
         } else if (file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
@@ -443,29 +531,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: `Định dạng file không được hỗ trợ: ${file.originalname}` });
         }
 
-        if (!textContent || textContent.trim().length === 0) {
-          return res.status(400).json({ message: `File rỗng hoặc không thể trích xuất nội dung: ${file.originalname}` });
-        }
-
-        // Add file separator
-        combinedTextContent += `\n\n=== FILE ${i + 1}: ${file.originalname} ===\n${textContent}`;
+        // Add file separator (even if text is empty, let AI handle it)
+        combinedTextContent += `\n\n=== FILE ${i + 1}: ${file.originalname} ===\n${textContent || '[Không có text]'}`;
       }
 
-      if (combinedTextContent.trim().length < 50) {
-        return res.status(400).json({ message: "Nội dung file quá ngắn, không đủ thông tin để trích xuất" });
-      }
+      // Let AI handle even short content (might be scanned images or minimal data)
+      console.log(`[Extract] Total extracted text: ${combinedTextContent.length} chars from ${files.length} files`);
 
-      // Send combined text to GPT-4 AI with specialized prompt based on fileGroup and caseType
-      const extractedData = await extractDataFromDocument(combinedTextContent, "pdf", fileGroup, caseType);
+      // Send combined text to DeepSeek AI with specialized prompt based on fileGroup and caseType
+      let extractedData = await extractDataFromDocument(combinedTextContent, "pdf", fileGroup, caseType);
       
       if (!extractedData || typeof extractedData !== 'object') {
         return res.status(500).json({ message: "AI không trả về dữ liệu hợp lệ" });
       }
 
+      // 🔍 DEBUG: Log extracted ICD codes
+      console.log('[Extract] ICD Codes from AI:');
+      console.log('  - Main ICD:', extractedData.icdCodes?.main);
+      console.log('  - Secondary ICDs:', extractedData.icdCodes?.secondary);
+      console.log('  - Secondary count:', extractedData.icdCodes?.secondary?.length || 0);
+
       // ✨ ENRICH: Auto-fill activeIngredient from drug formulary database
       if (extractedData.medications && Array.isArray(extractedData.medications)) {
         console.log(`[Enrichment] Processing ${extractedData.medications.length} medications...`);
         extractedData.medications = await enrichMedicationsWithActiveIngredients(extractedData.medications);
+        
+        // ✨ CALCULATE DURATION: Auto-calculate usage end date
+        console.log(`[Duration] Calculating medication duration...`);
+        extractedData.medications = await applyMedicationDuration(extractedData.medications);
+      }
+
+      // ✨ ICD MAPPING: Auto-map diagnoses to ICD-10 codes
+      if (extractedData.diagnosisMain || extractedData.diagnosisSecondary) {
+        console.log(`[ICD Mapping] Applying ICD-10 mapping...`);
+        extractedData = applyICDMapping(extractedData);
+        console.log('[ICD Mapping] After mapping:');
+        console.log('  - Main ICD:', extractedData.icdCodes?.main);
+        console.log('  - Secondary ICDs:', extractedData.icdCodes?.secondary);
       }
 
       res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -916,11 +1018,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .map(drug => [drug.tradeName.toLowerCase().trim(), drug])
       );
       
+      // Get patient's ICD codes for BHYT check
+      let patientICDs: ICDCode[] = [];
+      
+      // Priority 1: Use icdCodes if exists (jsonb object: {main: string, secondary: string[]})
+      if (caseData.icdCodes && typeof caseData.icdCodes === 'object') {
+        const icdObj = caseData.icdCodes as { main?: string; secondary?: string[] };
+        const mainICD = icdObj.main && icdObj.main.trim() ? [icdObj.main] : [];
+        const secondaryICDs = Array.isArray(icdObj.secondary) ? icdObj.secondary : [];
+        patientICDs = [...mainICD, ...secondaryICDs].filter((code: string) => code && code.trim().length > 0);
+      }
+      // Priority 2: Parse from diagnosisMain and diagnosisSecondary (text fields) - fallback
+      else {
+        const mainICD = caseData.diagnosisMain?.match(/[A-Z]\d{2}(\.\d+)?/)?.[0];
+        const secondaryICDs = caseData.diagnosisSecondary 
+          ? caseData.diagnosisSecondary.flatMap(d => 
+              d.match(/[A-Z]\d{2}(\.\d+)?/g) || []
+            )
+          : [];
+        patientICDs = [mainICD, ...secondaryICDs].filter((icd): icd is string => Boolean(icd));
+      }
+      
+      // ⭐ DEDUPLICATE: Remove duplicate ICDs
+      patientICDs = deduplicateICDs(patientICDs);
+      
       const medicationsWithStatus: MedicationWithStatus[] = medications.map(med => {
-        const matchedDrug = drugMap.get(med.drugName.toLowerCase().trim());
+        // Extract trade name from drug name (e.g., "Amoxicilin + acid clavulanic (Curam 1000mg) 875mg" -> "Curam 1000mg")
+        let drugNameToMatch = med.drugName.toLowerCase().trim();
+        
+        // Try to extract from parentheses first
+        const parenMatch = med.drugName.match(/\(([^)]+)\)/);
+        if (parenMatch) {
+          drugNameToMatch = parenMatch[1].toLowerCase().trim();
+        }
+        
+        // Try exact match first
+        let matchedDrug = drugMap.get(drugNameToMatch);
+        
+        // If not found, try fuzzy match by checking if drugFormulary name is contained in medication name
+        if (!matchedDrug) {
+          for (const [formularyName, drug] of drugMap.entries()) {
+            if (drugNameToMatch.includes(formularyName) || formularyName.includes(drugNameToMatch)) {
+              matchedDrug = drug;
+              break;
+            }
+          }
+        }
         
         // Dual-source approach: formulary (priority) + fallback from existing fields
         const fallbackParsed = parseStrengthUnit(med.prescribedDose);
+        
+        // Check ICD-Drug compliance (BHYT)
+        let icdValid = undefined;
+        let matchedICD = undefined;
+        let matchedPattern = undefined;
+        let icdMessage = undefined;
+        
+        if (matchedDrug && matchedDrug.icdPatterns) {
+          const drugPatterns = parseICDPatterns(matchedDrug.icdPatterns);
+          if (drugPatterns.length > 0) {
+            const icdCheckResult = isDrugCoveredByICD(patientICDs, drugPatterns);
+            icdValid = icdCheckResult.icdValid;
+            matchedICD = icdCheckResult.matchedICD;
+            matchedPattern = icdCheckResult.matchedPattern;
+            icdMessage = icdCheckResult.message;
+          }
+        }
+        
+        // Get required patterns for display
+        const requiredPatterns = matchedDrug?.icdPatterns 
+          ? parseICDPatterns(matchedDrug.icdPatterns) 
+          : undefined;
         
         return {
           ...med,
@@ -929,10 +1097,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           activeIngredient: matchedDrug?.activeIngredient || (med as any).activeIngredient || med.drugName,
           strength: matchedDrug?.strength || fallbackParsed.strength,
           unit: matchedDrug?.unit || fallbackParsed.unit,
+          // BHYT ICD check
+          icdValid,
+          matchedICD,
+          matchedPattern,
+          icdMessage,
+          requiredPatterns,
         };
       });
       res.json(medicationsWithStatus);
     } catch (error: any) {
+      console.error('[/api/cases/:id/medications ERROR]', error);
       res.status(500).json({ message: error.message });
     }
   });
@@ -949,6 +1124,136 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(201).json(medication);
     } catch (error: any) {
       res.status(400).json({ message: error.message });
+    }
+  });
+
+  // ✅ NEW: Endpoint riêng cho tab "Kiểm tra mã ICD"
+  app.get("/api/cases/:id/icd-check", requireAuth, async (req, res) => {
+    try {
+      const caseData = await storage.getCase(req.params.id);
+      if (!caseData) {
+        return res.status(404).json({ message: "Không tìm thấy ca bệnh" });
+      }
+      
+      const user = req.user!;
+      if (user.role !== "admin" && caseData.userId !== user.id) {
+        return res.status(403).json({ message: "Không có quyền xem ca bệnh này" });
+      }
+      
+      const medications = await storage.getMedicationsByCase(req.params.id);
+      
+      // Get drug formulary cache
+      const now = Date.now();
+      if (!drugFormularyCache.data || (now - drugFormularyCache.timestamp) > CACHE_TTL) {
+        drugFormularyCache.data = await storage.getAllDrugs();
+        drugFormularyCache.timestamp = now;
+      }
+      
+      const drugMap = new Map<string, DrugFormulary>(
+        drugFormularyCache.data
+          .filter(drug => drug.tradeName)
+          .map(drug => [drug.tradeName.toLowerCase().trim(), drug])
+      );
+      
+      // Get patient's ICD codes from icdCodes (jsonb) or diagnosisMain/diagnosisSecondary
+      let patientICDList: ICDCode[] = [];
+      
+      // Priority 1: Use icdCodes if exists (jsonb object: {main: string, secondary: string[]})
+      if (caseData.icdCodes && typeof caseData.icdCodes === 'object') {
+        const icdObj = caseData.icdCodes as { main?: string; secondary?: string[] };
+        const mainICD = icdObj.main && icdObj.main.trim() ? [icdObj.main] : [];
+        const secondaryICDs = Array.isArray(icdObj.secondary) ? icdObj.secondary : [];
+        patientICDList = [...mainICD, ...secondaryICDs].filter((code: string) => code && code.trim().length > 0);
+      }
+      // Priority 2: Parse from diagnosisMain and diagnosisSecondary (text fields) - fallback
+      else {
+        const mainICD = caseData.diagnosisMain?.match(/[A-Z]\d{2}(\.\d+)?/)?.[0];
+        const secondaryICDs = caseData.diagnosisSecondary 
+          ? caseData.diagnosisSecondary.flatMap(d => 
+              d.match(/[A-Z]\d{2}(\.\d+)?/g) || []
+            )
+          : [];
+        patientICDList = [mainICD, ...secondaryICDs].filter((icd): icd is string => Boolean(icd));
+      }
+      
+      // ⭐ DEDUPLICATE: Remove duplicate ICDs
+      patientICDList = deduplicateICDs(patientICDList);
+      
+      // Build checked items for summary
+      const checkedItems: CheckedPrescriptionItem[] = medications.map(med => {
+        // Extract trade name from drug name (e.g., "Amoxicilin + acid clavulanic (Curam 1000mg) 875mg" -> "Curam 1000mg")
+        let drugNameToMatch = med.drugName.toLowerCase().trim();
+        
+        // Try to extract from parentheses first
+        const parenMatch = med.drugName.match(/\(([^)]+)\)/);
+        if (parenMatch) {
+          drugNameToMatch = parenMatch[1].toLowerCase().trim();
+        }
+        
+        // Try exact match first
+        let matchedDrug = drugMap.get(drugNameToMatch);
+        
+        // If not found, try fuzzy match by checking if drugFormulary name is contained in medication name
+        if (!matchedDrug) {
+          for (const [formularyName, drug] of drugMap.entries()) {
+            if (drugNameToMatch.includes(formularyName) || formularyName.includes(drugNameToMatch)) {
+              matchedDrug = drug;
+              break;
+            }
+          }
+        }
+        
+        const drugPatterns = matchedDrug?.icdPatterns ? parseICDPatterns(matchedDrug.icdPatterns) : [];
+        const contraindicationPatterns = matchedDrug?.contraindicationIcds ? parseICDPatterns(matchedDrug.contraindicationIcds) : [];
+        
+        let icdValid = false;
+        let matchedICD = undefined;
+        let matchedPattern = undefined;
+        let hasContraindication = false;
+        let contraindicationICD = undefined;
+        let contraindicationPattern = undefined;
+        
+        // Check chỉ định
+        if (drugPatterns.length > 0) {
+          const result = isDrugCoveredByICD(patientICDList, drugPatterns);
+          icdValid = result.icdValid;
+          matchedICD = result.matchedICD;
+          matchedPattern = result.matchedPattern;
+        }
+        
+        // Check chống chỉ định
+        if (contraindicationPatterns.length > 0) {
+          const contraResult = checkContraindication(patientICDList, contraindicationPatterns);
+          hasContraindication = contraResult.hasContraindication;
+          contraindicationICD = contraResult.matchedICD;
+          contraindicationPattern = contraResult.matchedPattern;
+        }
+        
+        return {
+          drugName: med.drugName,
+          isInsurance: med.isInsurance ?? true, // default true nếu chưa set
+          icdValid,
+          matchedICD,
+          matchedPattern,
+          requiredPatterns: drugPatterns,
+          hasContraindication,
+          contraindicationICD,
+          contraindicationPattern,
+          contraindicationPatterns,
+        };
+      });
+      
+      // Generate summary text
+      const summaryText = buildIcdSummaryText(checkedItems, patientICDList);
+      
+      res.json({
+        patientICDList,
+        items: checkedItems,
+        summaryText,
+      });
+    } catch (error: any) {
+      console.error('[/api/cases/:id/icd-check ERROR]', error);
+      res.status(500).json({ message: error.message });
     }
   });
 
@@ -1941,9 +2246,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Invalidate cache to show updated drugs immediately
       invalidateDrugFormularyCache();
       
+      const skippedCount = validDrugs.length - inserted.length;
       const response: any = { 
-        message: `Đã import thành công ${inserted.length}/${drugs.length} thuốc${useAI ? ' (sử dụng AI)' : ''}`,
-        count: inserted.length 
+        message: `Đã import thành công ${inserted.length}/${drugs.length} thuốc${useAI ? ' (sử dụng AI)' : ''}${skippedCount > 0 ? ` (${skippedCount} bị bỏ qua vì trùng lặp)` : ''}`,
+        count: inserted.length,
+        skipped: skippedCount
       };
       
       if (errors.length > 0) {
