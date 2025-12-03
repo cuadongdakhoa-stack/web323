@@ -1445,7 +1445,6 @@ export default function NewCase() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="font-semibold">Nội trú (Inpatient)</h3>
-                          <Badge variant="secondary" className="text-xs">Bệnh nhân nằm viện</Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">
                           Dành cho bệnh nhân điều trị nội trú, nằm viện
@@ -1469,7 +1468,6 @@ export default function NewCase() {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-1">
                           <h3 className="font-semibold">Ngoại trú (Outpatient)</h3>
-                          <Badge variant="secondary" className="text-xs">Khám ngoại</Badge>
                         </div>
                         <p className="text-xs text-muted-foreground mb-2">
                           Dành cho bệnh nhân khám ngoại trú, không nằm viện
