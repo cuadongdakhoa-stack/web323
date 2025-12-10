@@ -1,6 +1,5 @@
 import { z } from "zod";
 import { storage } from "./storage";
-import { callDirectDeepSeek } from "./directDeepseek";
 import {
   OUTPATIENT_PRESCRIPTION_PROMPT,
   OUTPATIENT_BILLING_PROMPT,
@@ -85,8 +84,7 @@ const clinicalAnalysisSchema = z.object({
 
 const MODELS = {
   GPT4: "openai/gpt-4o",
-  DEEPSEEK_CHAT: "deepseek/deepseek-chat",
-  PERPLEXITY: "perplexity/sonar-pro",
+  PERPLEXITY: "perplexity/sonar-reasoning",
 };
 
 interface ChatMessage {
@@ -355,11 +353,11 @@ Hãy cung cấp:
     perplexityUserPrompt
   );
 
-  const deepseekVerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy tạo phân tích có cấu trúc.
+  const gpt4VerificationSystemPrompt = `Bạn là dược sĩ lâm sàng chuyên nghiệp. Dựa trên kết quả tìm kiếm bằng chứng y khoa, hãy tạo phân tích có cấu trúc.
 
 QUAN TRỌNG: CHỈ trả về JSON hợp lệ, KHÔNG thêm văn bản giải thích hay markdown. Response phải bắt đầu bằng { và kết thúc bằng }.`;
 
-  const deepseekVerificationUserPrompt = `Phân tích ban đầu:
+  const gpt4VerificationUserPrompt = `Phân tích ban đầu:
 ${initialAnalysis}
 
 Kết quả tìm kiếm bằng chứng y khoa:
@@ -400,12 +398,10 @@ Lưu ý:
 - KHÔNG dùng markdown (**, *, #) trong nội dung
 - drugDrugInteractionGroups: CHỈ điền nếu phân tích ban đầu có nhóm thuốc theo thời gian`;
 
-  const finalAnalysisRaw = await callDirectDeepSeek(
-    deepseekVerificationSystemPrompt,
-    deepseekVerificationUserPrompt,
-    0.5,
-    8000,
-    true
+  const finalAnalysisRaw = await callGPT4(
+    gpt4VerificationSystemPrompt,
+    gpt4VerificationUserPrompt,
+    0.5
   );
 
   let finalAnalysisJSON: any;
@@ -764,7 +760,7 @@ TRẢ VỀ JSON (KHÔNG có markdown, KHÔNG giải thích thêm):
   ]
 }`;
 
-  const rawAnalysis = await callDirectDeepSeek(systemPrompt, userPrompt, 0.3, 8000, true);
+  const rawAnalysis = await callGPT4(systemPrompt, userPrompt, 0.3);
   
   let initialAnalysis: any;
   try {
@@ -942,7 +938,7 @@ LƯU Ý:
 - patientInfo.diagnosisMain: Chẩn đoán chính + mã ICD (nếu có)
 - patientInfo.diagnosisSecondary: Mảng các chẩn đoán phụ + mã ICD`;
 
-  const rawResult = await callDirectDeepSeek(systemPrompt, userPrompt, 0.2, 4000, true);
+  const rawResult = await callGPT4(systemPrompt, userPrompt, 0.2);
   
   try {
     let jsonString = rawResult.trim();
@@ -951,7 +947,7 @@ LƯU Ý:
     const lastBrace = jsonString.lastIndexOf('}');
     
     if (firstBrace === -1 || lastBrace === -1 || firstBrace >= lastBrace) {
-      throw new Error("No valid JSON object found in DeepSeek response");
+      throw new Error("No valid JSON object found in GPT-4o response");
     }
     
     jsonString = jsonString.substring(firstBrace, lastBrace + 1);
@@ -1121,7 +1117,7 @@ ${context.caseData.allergies ? `⚠️ Dị ứng: ${context.caseData.allergies}
 
   messages.push({ role: "user", content: userPrompt });
 
-  return callOpenRouter(MODELS.DEEPSEEK_CHAT, messages, 0.4);
+  return callOpenRouter(MODELS.GPT4, messages, 0.4);
 }
 
 // Fallback comprehensive prompt (for backward compatibility - used when fileGroup is not specified)
@@ -1210,10 +1206,8 @@ JSON format:
 
 CHỈ TRẢ VỀ JSON, KHÔNG THÊM GÌ KHÁC.`;
 
-  // Use DeepSeek V3.2-Exp for extraction (cheaper, JSON mode)
-  const maxTokens = Math.min(8000, Math.ceil(textContent.length / 2));
-  const deepseekResult = await callDirectDeepSeek(systemPrompt, userPrompt, 0.1, maxTokens, true);
-  const rawResult = deepseekResult.content;
+  // Use GPT-4o for extraction (faster)
+  const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);
   
   try {
     const cleanedResult = rawResult.trim()
@@ -1329,7 +1323,7 @@ Trả về JSON (QUAN TRỌNG: CHỈ JSON, không thêm text khác):
 }`;
 
   try {
-    const rawResult = await callDirectDeepSeek(systemPrompt, userPrompt, 0.1, 2000, true);
+    const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);
     const cleanedResult = rawResult.trim()
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')
@@ -1399,10 +1393,8 @@ YÊU CẦU:
 LƯU Ý: tradeName và activeIngredient là BẮT BUỘC, các trường khác có thể null nếu không có.`;
 
   try {
-    // Use DeepSeek V3.2-Exp for drug data extraction (cheaper, JSON mode)
-    const maxTokens = Math.min(8000, 4000);
-    const deepseekResult = await callDirectDeepSeek(systemPrompt, userPrompt, 0.1, maxTokens, true);
-    const rawResult = deepseekResult.content;
+    // Use GPT-4o for drug data extraction (faster)
+    const rawResult = await callGPT4(systemPrompt, userPrompt, 0.1);
     const cleanedResult = rawResult.trim()
       .replace(/^```json\s*/i, '')
       .replace(/^```\s*/i, '')

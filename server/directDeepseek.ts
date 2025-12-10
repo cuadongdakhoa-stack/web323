@@ -1,5 +1,5 @@
 /**
- * Direct DeepSeek API Integration (không qua OpenRouter)
+ * Direct DeepSeek API Integration 
  * Model: deepseek-chat (DeepSeek-V3.2-Exp)
  * API: https://api.deepseek.com
  * Pricing: $0.27/1M input tokens, $1.10/1M output tokens (cache miss)
@@ -67,7 +67,7 @@ export async function callDirectDeepSeek(
     ],
     temperature,
     max_tokens: maxTokens,
-    stream: false
+    stream: true  // Enable streaming to avoid 30s timeout
   };
 
   // Enable JSON mode if requested (forces valid JSON output)
@@ -75,7 +75,7 @@ export async function callDirectDeepSeek(
     requestBody.response_format = { type: "json_object" };
   }
 
-  console.log(`[DeepSeek V3.2-Exp] Calling API${jsonMode ? ' (JSON mode)' : ''}...`);
+  console.log(`[DeepSeek V3.2-Exp] Calling API${jsonMode ? ' (JSON mode)' : ''}... STREAMING`);
   console.log(`[DeepSeek V3.2-Exp] Prompt length: ${userPrompt.length} chars`);
 
   const startTime = Date.now();
@@ -101,23 +101,57 @@ export async function callDirectDeepSeek(
       throw new Error(`DeepSeek API error: ${response.status} - ${errorText}`);
     }
 
-    const data = await response.json() as DeepSeekResponse;
+    // Handle streaming response
+    const reader = response.body?.getReader();
+    const decoder = new TextDecoder();
+    let fullContent = '';
+    let totalTokens = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      const chunk = decoder.decode(value, { stream: true });
+      const lines = chunk.split('\n').filter(line => line.trim().startsWith('data:'));
+
+      for (const line of lines) {
+        const jsonStr = line.replace(/^data:\s*/, '');
+        if (jsonStr === '[DONE]') continue;
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          if (parsed.choices?.[0]?.delta?.content) {
+            fullContent += parsed.choices[0].delta.content;
+          }
+          if (parsed.usage) {
+            totalTokens = parsed.usage;
+          }
+        } catch (e) {
+          // Ignore parse errors for partial chunks
+        }
+      }
+    }
+
     const duration = Date.now() - startTime;
 
-    console.log(`[DeepSeek V3.2-Exp] Response in ${duration}ms`);
-    console.log(`[DeepSeek V3.2-Exp] Tokens: ${data.usage.prompt_tokens} in + ${data.usage.completion_tokens} out = ${data.usage.total_tokens} total`);
+    console.log(`[DeepSeek V3.2-Exp] Streaming complete in ${duration}ms`);
+    console.log(`[DeepSeek V3.2-Exp] Tokens: ${totalTokens.prompt_tokens} in + ${totalTokens.completion_tokens} out = ${totalTokens.total_tokens} total`);
 
     // Calculate cost (DeepSeek V3.2-Exp pricing: $0.27 per 1M input, $1.10 per 1M output - cache miss)
-    const inputCost = (data.usage.prompt_tokens / 1_000_000) * 0.27;
-    const outputCost = (data.usage.completion_tokens / 1_000_000) * 1.10;
+    const inputCost = (totalTokens.prompt_tokens / 1_000_000) * 0.27;
+    const outputCost = (totalTokens.completion_tokens / 1_000_000) * 1.10;
     const totalCost = inputCost + outputCost;
     
     console.log(`[DeepSeek V3.2-Exp] Cost ≈ $${totalCost.toFixed(6)} ($${inputCost.toFixed(6)} in + $${outputCost.toFixed(6)} out)`);
 
     return {
-      content: data.choices[0].message.content,
+      content: fullContent,
       usage: {
-        ...data.usage,
+        ...totalTokens,
         costUsd: totalCost
       }
     };

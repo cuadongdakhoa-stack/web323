@@ -182,6 +182,13 @@ export default function CaseDetail() {
     mutationFn: async () => {
       return await apiRequest(`/api/cases/${id}/reports/generate`, {
         method: "POST",
+        timeout: 120000, // 2 phút timeout cho AI generation
+      });
+    },
+    onMutate: () => {
+      toast({
+        title: "Đang tạo phiếu tư vấn...",
+        description: "AI đang phân tích và tạo phiếu tư vấn. Quá trình này có thể mất 30-60 giây. Vui lòng không đóng trang.",
       });
     },
     onSuccess: () => {
@@ -192,6 +199,10 @@ export default function CaseDetail() {
       });
     },
     onError: (error: any) => {
+      // Don't show error if request was cancelled by user (closing browser/tab)
+      if (error.message?.includes('aborted') || error.message?.includes('cancelled')) {
+        return;
+      }
       toast({
         variant: "destructive",
         title: "Lỗi tạo phiếu tư vấn",
@@ -441,27 +452,24 @@ export default function CaseDetail() {
                 </p>
               </div>
 
-              {/* Hiển thị tất cả mã ICD (chính + phụ) */}
-              {caseData.icdCodes && typeof caseData.icdCodes === 'object' && (
+              {caseData.icdCodes && typeof caseData.icdCodes === 'object' && 'main' in caseData.icdCodes ? (
                 <div className="bg-blue-50 dark:bg-blue-950 p-4 rounded-lg border border-blue-200 dark:border-blue-800">
                   <p className="text-sm font-medium text-blue-900 dark:text-blue-100 mb-2">📋 Mã bệnh (ICD-10)</p>
                   <div className="space-y-2">
-                    {/* Mã bệnh chính */}
-                    {caseData.icdCodes.main && (
+                    {(caseData.icdCodes as any).main && (
                       <div>
                         <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Mã chính:</span>
                         <span className="ml-2 font-mono text-sm font-semibold text-blue-900 dark:text-blue-100">
-                          {String(caseData.icdCodes.main)}
+                          {String((caseData.icdCodes as any).main)}
                         </span>
                       </div>
                     )}
                     
-                    {/* Mã bệnh kèm theo */}
-                    {Array.isArray(caseData.icdCodes.secondary) && (caseData.icdCodes.secondary as string[]).length > 0 && (
+                    {'secondary' in caseData.icdCodes && Array.isArray((caseData.icdCodes as any).secondary) && (caseData.icdCodes as any).secondary.length > 0 && (
                       <div>
-                        <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Mã kèm theo ({(caseData.icdCodes.secondary as string[]).length} mã):</span>
+                        <span className="text-xs font-medium text-blue-700 dark:text-blue-300">Mã kèm theo ({(caseData.icdCodes as any).secondary.length} mã):</span>
                         <div className="mt-1 flex flex-wrap gap-2">
-                          {Array.from(new Set(caseData.icdCodes.secondary as string[])).map((icdCode: string, idx: number) => (
+                          {Array.from(new Set((caseData.icdCodes as any).secondary as string[])).map((icdCode: string, idx: number) => (
                             <span 
                               key={`badge-${icdCode}-${idx}`}
                               className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-mono font-medium bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 border border-blue-300 dark:border-blue-700"
@@ -474,15 +482,13 @@ export default function CaseDetail() {
                     )}
                   </div>
                 </div>
-              )}
+              ) : null}
 
-              {caseData.icdCodes && typeof caseData.icdCodes === 'object' && 'secondary' in caseData.icdCodes && Array.isArray(caseData.icdCodes.secondary) && (caseData.icdCodes.secondary as string[]).length > 0 && (
+              {caseData.icdCodes && typeof caseData.icdCodes === 'object' && 'secondary' in caseData.icdCodes && Array.isArray((caseData.icdCodes as any).secondary) && (caseData.icdCodes as any).secondary.length > 0 ? (
                 <div>
                   <p className="text-sm font-medium text-muted-foreground mb-1">Bệnh kèm theo</p>
                   <ul className="text-base list-disc list-inside">
-                    {/* Remove duplicate ICD codes before mapping */}
-                    {Array.from(new Set(caseData.icdCodes.secondary as string[])).map((icdCode: string, idx: number) => {
-                      // Map ICD codes to disease names
+                    {Array.from(new Set((caseData.icdCodes as any).secondary as string[])).map((icdCode: string, idx: number) => {
                       const icdNameMap: Record<string, string> = {
                         'N72': 'Viêm cổ tử cung',
                         'B19': 'Viêm gan virus không xác định',
@@ -508,7 +514,7 @@ export default function CaseDetail() {
                     })}
                   </ul>
                 </div>
-              )}
+              ) : null}
               {caseData.medicalHistory && (
                 <div>
                   <p className="text-sm font-medium text-muted-foreground mb-1">Tiền sử bệnh</p>
@@ -709,11 +715,7 @@ export default function CaseDetail() {
                             
                             {/* Chống Chỉ Định */}
                             <TableCell className="text-sm">
-                              {!item.contraindicationPatterns || item.contraindicationPatterns.length === 0 ? (
-                                <Badge variant="secondary" className="bg-gray-200 text-gray-600 whitespace-nowrap">
-                                  Chưa cấu hình
-                                </Badge>
-                              ) : item.hasContraindication ? (
+                              {item.hasContraindication ? (
                                 <div className="flex flex-col gap-1">
                                   <Badge variant="destructive" className="gap-1 w-fit whitespace-nowrap">
                                     <AlertTriangle className="w-3 h-3" />
@@ -1203,7 +1205,7 @@ export default function CaseDetail() {
                       {generateReportMutation.isPending ? (
                         <>
                           <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                          Đang tạo...
+                          Đang tạo (30-60s)...
                         </>
                       ) : (
                         <>

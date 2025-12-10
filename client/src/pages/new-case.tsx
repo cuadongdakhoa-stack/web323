@@ -551,10 +551,10 @@ export default function NewCase() {
         analysisQueue.push({ files: selectedFiles, fileGroup: 'prescription', label: 'Đơn thuốc' });
       }
       if (selectedFilesPrescription.length > 0) {
-        analysisQueue.push({ files: selectedFilesPrescription, fileGroup: 'prescription', label: 'Bảng kê' });
+        analysisQueue.push({ files: selectedFilesPrescription, fileGroup: 'billing', label: 'Bảng kê' });
       }
       if (selectedFilesLab.length > 0) {
-        analysisQueue.push({ files: selectedFilesLab, fileGroup: 'lab', label: 'Xét nghiệm' });
+        analysisQueue.push({ files: selectedFilesLab, fileGroup: 'lab_tests', label: 'Xét nghiệm' });
       }
     }
 

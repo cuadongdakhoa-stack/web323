@@ -468,9 +468,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const caseType = req.body.caseType as string | undefined; // "inpatient" or "outpatient"
       console.log(`[Extract] Processing ${files.length} files with fileGroup: ${fileGroup || 'none'}, caseType: ${caseType || 'none'}`);
 
-      let combinedTextContent = "";
-
-      // Process all files in the batch
+      // ✅ XỬ LÝ TỪNG FILE RIÊNG BIỆT với prompt phù hợp
+      const extractedDataArray: any[] = [];
+      
       for (let i = 0; i < files.length; i++) {
         const file = files[i];
         let textContent = "";
@@ -531,15 +531,66 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: `Định dạng file không được hỗ trợ: ${file.originalname}` });
         }
 
-        // Add file separator (even if text is empty, let AI handle it)
-        combinedTextContent += `\n\n=== FILE ${i + 1}: ${file.originalname} ===\n${textContent || '[Không có text]'}`;
+        // ✅ GỌI AI CHO TỪNG FILE với prompt riêng biệt
+        console.log(`[Extract] File ${i + 1}/${files.length}: ${file.originalname} (${textContent.length} chars)`);
+        const fileData = await extractDataFromDocument(textContent, "pdf", fileGroup, caseType);
+        extractedDataArray.push(fileData);
       }
 
-      // Let AI handle even short content (might be scanned images or minimal data)
-      console.log(`[Extract] Total extracted text: ${combinedTextContent.length} chars from ${files.length} files`);
-
-      // Send combined text to DeepSeek AI with specialized prompt based on fileGroup and caseType
-      let extractedData = await extractDataFromDocument(combinedTextContent, "pdf", fileGroup, caseType);
+      // ✅ MERGE DỮ LIỆU THÔNG MINH từ nhiều file
+      console.log(`[Merge] Merging data from ${extractedDataArray.length} files...`);
+      let extractedData = extractedDataArray[0]; // Bắt đầu từ file đầu tiên
+      
+      // Merge từ các file còn lại
+      for (let i = 1; i < extractedDataArray.length; i++) {
+        const fileData = extractedDataArray[i];
+        
+        // Thông tin bệnh nhân: ưu tiên file có dữ liệu
+        if (!extractedData.patientName && fileData.patientName) extractedData.patientName = fileData.patientName;
+        if (!extractedData.patientAge && fileData.patientAge) extractedData.patientAge = fileData.patientAge;
+        if (!extractedData.patientGender && fileData.patientGender) extractedData.patientGender = fileData.patientGender;
+        if (!extractedData.patientWeight && fileData.patientWeight) extractedData.patientWeight = fileData.patientWeight;
+        if (!extractedData.patientHeight && fileData.patientHeight) extractedData.patientHeight = fileData.patientHeight;
+        if (!extractedData.admissionDate && fileData.admissionDate) extractedData.admissionDate = fileData.admissionDate;
+        
+        // Chẩn đoán: ưu tiên file có dữ liệu đầy đủ hơn
+        if (!extractedData.diagnosisMain && fileData.diagnosisMain) extractedData.diagnosisMain = fileData.diagnosisMain;
+        if (fileData.diagnosisSecondary && fileData.diagnosisSecondary.length > 0) {
+          extractedData.diagnosisSecondary = [...(extractedData.diagnosisSecondary || []), ...fileData.diagnosisSecondary];
+        }
+        
+        // ICD codes: merge và loại trùng
+        if (fileData.icdCodes) {
+          if (!extractedData.icdCodes) extractedData.icdCodes = { main: null, secondary: [] };
+          if (!extractedData.icdCodes.main && fileData.icdCodes.main) {
+            extractedData.icdCodes.main = fileData.icdCodes.main;
+          }
+          if (fileData.icdCodes.secondary && fileData.icdCodes.secondary.length > 0) {
+            const existingSecondary = new Set(extractedData.icdCodes.secondary || []);
+            fileData.icdCodes.secondary.forEach((icd: string) => {
+              if (icd && icd.trim()) existingSecondary.add(icd.trim());
+            });
+            extractedData.icdCodes.secondary = Array.from(existingSecondary);
+          }
+        }
+        
+        // Lab results: merge
+        if (!extractedData.labResults && fileData.labResults) extractedData.labResults = fileData.labResults;
+        
+        // Medications: CHỈ merge nếu fileGroup = "prescription"
+        // Nếu fileGroup = "billing" → không lấy medications
+        if (fileGroup === "prescription" && fileData.medications && fileData.medications.length > 0) {
+          if (!extractedData.medications) extractedData.medications = [];
+          extractedData.medications.push(...fileData.medications);
+        }
+        
+        // Medical history & allergies
+        if (!extractedData.medicalHistory && fileData.medicalHistory) extractedData.medicalHistory = fileData.medicalHistory;
+        if (!extractedData.allergies && fileData.allergies) extractedData.allergies = fileData.allergies;
+      }
+      
+      console.log(`[Merge] Final data - Medications: ${extractedData.medications?.length || 0}, Secondary ICDs: ${extractedData.icdCodes?.secondary?.length || 0}`);
+      console.log(`[Merge] Final data - Medications: ${extractedData.medications?.length || 0}, Secondary ICDs: ${extractedData.icdCodes?.secondary?.length || 0}`);
       
       if (!extractedData || typeof extractedData !== 'object') {
         return res.status(500).json({ message: "AI không trả về dữ liệu hợp lệ" });
@@ -1057,7 +1108,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // If not found, try fuzzy match by checking if drugFormulary name is contained in medication name
         if (!matchedDrug) {
-          for (const [formularyName, drug] of drugMap.entries()) {
+          for (const [formularyName, drug] of Array.from(drugMap.entries())) {
             if (drugNameToMatch.includes(formularyName) || formularyName.includes(drugNameToMatch)) {
               matchedDrug = drug;
               break;
@@ -1195,7 +1246,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         // If not found, try fuzzy match by checking if drugFormulary name is contained in medication name
         if (!matchedDrug) {
-          for (const [formularyName, drug] of drugMap.entries()) {
+          for (const [formularyName, drug] of Array.from(drugMap.entries())) {
             if (drugNameToMatch.includes(formularyName) || formularyName.includes(drugNameToMatch)) {
               matchedDrug = drug;
               break;
@@ -1221,13 +1272,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           matchedPattern = result.matchedPattern;
         }
         
-        // Check chống chỉ định
-        if (contraindicationPatterns.length > 0) {
-          const contraResult = checkContraindication(patientICDList, contraindicationPatterns);
-          hasContraindication = contraResult.hasContraindication;
-          contraindicationICD = contraResult.matchedICD;
-          contraindicationPattern = contraResult.matchedPattern;
-        }
+        // ⭐ CHỐNG CHỈ ĐỊNH: Tạm thời tắt logic đối chiếu, mặc định = không có chống chỉ định
+        // TODO: Sẽ bật lại sau khi có logic đối chiếu chính xác
+        hasContraindication = false;
+        contraindicationICD = undefined;
+        contraindicationPattern = undefined;
+        
+        // Commented out contraindication check
+        // if (contraindicationPatterns.length > 0) {
+        //   const contraResult = checkContraindication(patientICDList, contraindicationPatterns);
+        //   hasContraindication = contraResult.hasContraindication;
+        //   contraindicationICD = contraResult.matchedICD;
+        //   contraindicationPattern = contraResult.matchedPattern;
+        // }
         
         return {
           drugName: med.drugName,
